@@ -20,6 +20,7 @@ import {
   ORIGIN_INDEX_KEY,
   originRecordKey,
   pageRecordKey,
+  pageRecordKeyOrigin,
   deriveOrigin,
   derivePageKey,
 } from "../shared/keys";
@@ -155,13 +156,14 @@ export class OverlayRepository {
     return this.#locked(origin, async () => {
       try {
         const values = await this.#adapter.get([originRecordKey(origin), ORIGIN_INDEX_KEY]);
+        const allValues = await this.#adapter.readAll();
         const record = values[originRecordKey(origin)] === undefined ? null : parseOriginRecordV1(values[originRecordKey(origin)]);
         if (record !== null && !record.ok) return invalidStoredData();
         const index = values[ORIGIN_INDEX_KEY] === undefined
           ? { ok: true as const, value: emptyIndex() }
           : parseOriginIndexV1(values[ORIGIN_INDEX_KEY]);
         if (!index.ok) return invalidStoredData();
-        const pageKeys = await this.#pageKeysForOrigin();
+        const pageKeys = this.#pageKeysForOrigin(allValues, origin);
         const keys = [originRecordKey(origin), ...pageKeys];
         if (record !== null && record.value.reference !== null) {
           keys.push(imageRecordKey(record.value.reference.id));
@@ -177,13 +179,33 @@ export class OverlayRepository {
 
   async cleanupOrphans(): Promise<Result<void, RepositoryError>> {
     try {
-      const values = await this.#adapter.get([ORIGIN_INDEX_KEY]);
-      if (values[ORIGIN_INDEX_KEY] === undefined) return { ok: true, value: undefined };
-      const index = parseOriginIndexV1(values[ORIGIN_INDEX_KEY]);
-      if (!index.ok) return invalidStoredData();
-      for (const origin of index.value.origins) {
-        const record = await this.#adapter.get([originRecordKey(origin)]);
-        if (record[originRecordKey(origin)] === undefined) await this.#removeFromIndex(origin);
+      const values = await this.#adapter.readAll();
+      const storedIndex = values[ORIGIN_INDEX_KEY] === undefined
+        ? { ok: true as const, value: emptyIndex() }
+        : parseOriginIndexV1(values[ORIGIN_INDEX_KEY]);
+      if (!storedIndex.ok) return invalidStoredData();
+
+      const origins = new Set<Origin>();
+      const referencedImages = new Set<string>();
+      for (const [key, value] of Object.entries(values)) {
+        if (!key.startsWith("pixel-pincher:origin:")) continue;
+        const record = parseOriginRecordV1(value);
+        if (!record.ok || key !== originRecordKey(record.value.origin)) return invalidStoredData();
+        origins.add(record.value.origin);
+        if (record.value.reference !== null) referencedImages.add(imageRecordKey(record.value.reference.id));
+      }
+
+      const orphanKeys: string[] = [];
+      for (const key of Object.keys(values)) {
+        const pageOrigin = pageRecordKeyOrigin(key);
+        if (pageOrigin !== undefined && !origins.has(pageOrigin)) orphanKeys.push(key);
+        if (key.startsWith("pixel-pincher:image:") && !referencedImages.has(key)) orphanKeys.push(key);
+      }
+      if (orphanKeys.length > 0) await this.#adapter.remove(orphanKeys);
+
+      const nextOrigins = [...origins].sort();
+      if (nextOrigins.length !== storedIndex.value.origins.length || nextOrigins.some((origin, index) => origin !== storedIndex.value.origins[index])) {
+        await this.#adapter.set({ [ORIGIN_INDEX_KEY]: { schemaVersion: 1, origins: nextOrigins } });
       }
       return { ok: true, value: undefined };
     } catch {
@@ -241,18 +263,8 @@ export class OverlayRepository {
     await this.#adapter.set({ [ORIGIN_INDEX_KEY]: index });
   }
 
-  async #removeFromIndex(origin: Origin): Promise<void> {
-    const values = await this.#adapter.get([ORIGIN_INDEX_KEY]);
-    const parsed = values[ORIGIN_INDEX_KEY] === undefined
-      ? { ok: true as const, value: emptyIndex() }
-      : parseOriginIndexV1(values[ORIGIN_INDEX_KEY]);
-    if (!parsed.ok) throw new AppError("invalid-stored-data");
-    await this.#adapter.set({ [ORIGIN_INDEX_KEY]: { schemaVersion: 1, origins: parsed.value.origins.filter((value) => value !== origin) } });
-  }
 
-  async #pageKeysForOrigin(): Promise<string[]> {
-    // chrome.storage has no key-prefix query; future adapter versions may provide it.
-    // Page cleanup is therefore performed when an origin's pages are explicitly known.
-    return [];
+  #pageKeysForOrigin(values: Readonly<Record<string, unknown>>, origin: Origin): string[] {
+    return Object.keys(values).filter((key) => pageRecordKeyOrigin(key) === origin);
   }
 }

@@ -7,6 +7,7 @@ import {
   ORIGIN_INDEX_KEY,
   originRecordKey,
   pageRecordKey,
+  pageRecordKeyOrigin,
 } from "../../src/shared/keys";
 import { parseOrigin, parsePageKey, parseReferenceId } from "../../src/shared/parse";
 
@@ -22,6 +23,14 @@ describe("storage keys", () => {
     expect(derivePageKey(url)).toBe("https://example.com/path?tab=one");
     expect(deriveOrigin(new URL("ftp://example.com/path"))).toBeUndefined();
     expect(derivePageKey(new URL("ftp://example.com/path"))).toBeUndefined();
+  });
+
+  it("recovers origins only from canonical page-record keys", () => {
+    const pageKey = parsed(parsePageKey("https://example.com:8443/path?q=a&x=b"));
+
+    expect(pageRecordKeyOrigin(pageRecordKey(pageKey))).toBe("https://example.com:8443");
+    expect(pageRecordKeyOrigin("pixel-pincher:page:not-a-url")).toBeUndefined();
+    expect(pageRecordKeyOrigin("pixel-pincher:page:https%3A%2F%2Fexample.com%2Fpath%23fragment")).toBeUndefined();
   });
 
   it("uses stable prefixes and encodes every variable segment", () => {
