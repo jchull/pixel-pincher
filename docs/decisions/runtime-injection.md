@@ -46,7 +46,7 @@ registration and injection.
 
 ## Mandatory manual Chrome checks before Tasks 1–4
 
-1. Run `pnpm build`, load `.output/chrome-mv3` unpacked in Chrome, and serve
+1. Run `pnpm build`, load `dist/chrome-mv3` unpacked in Chrome, and serve
    the restrictive CSP fixture over HTTP (for example,
    `python3 -m http.server --directory tests/fixtures 8080`).
 2. Open the fixture at `http://localhost:8080/csp-page.html`, open the popup,

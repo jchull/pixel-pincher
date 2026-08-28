@@ -11,7 +11,7 @@ pnpm install
 pnpm dev
 ```
 
-WXT prints the extension directory. Load that unpacked directory from `chrome://extensions` with Developer mode enabled.
+WXT writes the Chromium build to `dist/chrome-mv3`. Load that unpacked directory from `chrome://extensions` with Developer mode enabled.
 
 ## Commands
 

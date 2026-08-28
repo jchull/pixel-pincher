@@ -9,5 +9,5 @@
     "types": ["chrome"]
   },
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": [".output", "node_modules"]
+  "exclude": [".output", "dist", "node_modules"]
 }

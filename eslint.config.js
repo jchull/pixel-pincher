@@ -5,6 +5,6 @@ export default [
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    ignores: ['.output/**', '.wxt/**', 'node_modules/**'],
+    ignores: ['.output/**', 'dist/**', '.wxt/**', 'node_modules/**'],
   },
 ];

@@ -1,7 +1,7 @@
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-const outputDirectory = ".output/chrome-mv3";
+const outputDirectory = "dist/chrome-mv3";
 const runtimeProofAssetPath = "content-scripts/runtime-proof.js";
 const manifestPath = join(outputDirectory, "manifest.json");
 

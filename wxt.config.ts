@@ -1,6 +1,7 @@
 import { defineConfig } from 'wxt';
 
 export default defineConfig({
+  outDir: "dist",
   manifest: {
     name: 'Pixel Pincher',
     description: 'Overlay and compare reference images on web pages.',
