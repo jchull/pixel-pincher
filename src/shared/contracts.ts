@@ -158,7 +158,9 @@ export type ImageRenderFailedError = ErrorFor<"image-render-failed">;
 
 export type ValidationError = ErrorFor<"unsupported-url" | "invalid-request">;
 export type RepositoryError = ErrorFor<"invalid-stored-data" | "storage-failed">;
-export type AccessError = ErrorFor<"site-access-denied" | "site-access-revoked">;
+export type AccessError = ErrorFor<
+  "site-access-denied" | "site-access-revoked" | "content-unavailable"
+>;
 export type DeliveryError = ErrorFor<"content-unavailable">;
 export type ImportError = ErrorFor<
   | "invalid-image-type"
