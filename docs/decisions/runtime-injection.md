@@ -40,9 +40,9 @@ restrictive CSP fixture served over HTTP at `http://localhost:8080`.
    registration persisted. Reloading a granted origin ran the proof with no
    popup action, and the popup action still injected into the already-open
    active tab afterwards.
-4. **Top frame only:** the registration used `allFrames: false`; the proof
-   badge appeared on the top-frame page and no child-frame injection was
-   observed.
+4. **Top frame only:** the registration used `allFrames: false`. A
+   same-origin iframe fixture directly verified that the top-frame proof
+   appeared while the child iframe remained proof-free.
 5. **CSP rendering:** on the restrictive fixture, the Shadow DOM data URL
    image reported **loaded**. The image renderer is therefore the chosen
    path for the overlay; the `createImageBitmap` canvas fallback is not
