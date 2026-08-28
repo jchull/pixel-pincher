@@ -141,6 +141,46 @@ describe("createChromeSiteAccessAdapter", () => {
       world: "ISOLATED",
     })]);
   });
+
+  it("translates permission and registration operations to exact Chrome arguments", async () => {
+    const contains = vi.fn().mockResolvedValue(true);
+    const registerContentScripts = vi.fn().mockResolvedValue(undefined);
+    const unregisterContentScripts = vi.fn().mockResolvedValue(undefined);
+    const updateContentScripts = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(globalThis, "chrome", {
+      configurable: true,
+      value: {
+        permissions: { contains, getAll: vi.fn().mockResolvedValue({ origins: [] }) },
+        scripting: {
+          executeScript: vi.fn().mockResolvedValue(undefined),
+          getRegisteredContentScripts: vi.fn().mockResolvedValue([]),
+          registerContentScripts,
+          unregisterContentScripts,
+          updateContentScripts,
+        },
+      },
+      writable: true,
+    });
+    const adapter = createChromeSiteAccessAdapter();
+    const registration = await registrationForOrigin(getOrigin(new URL("https://example.com/page")));
+
+    await expect(adapter.containsOrigin("https://example.com/*")).resolves.toBe(true);
+    await adapter.register(registration);
+    await adapter.update(registration);
+    await adapter.unregister([registration.id]);
+
+    expect(contains).toHaveBeenCalledWith({ origins: ["https://example.com/*"] });
+    const expectedRegistration = {
+      ...registration,
+      css: [],
+      excludeMatches: [],
+      js: ["content-scripts/overlay.js"],
+      matches: ["https://example.com/*"],
+    };
+    expect(registerContentScripts).toHaveBeenCalledWith([expectedRegistration]);
+    expect(updateContentScripts).toHaveBeenCalledWith([expectedRegistration]);
+    expect(unregisterContentScripts).toHaveBeenCalledWith({ ids: [registration.id] });
+  });
 });
 
 describe("SiteAccessService", () => {
@@ -387,6 +427,43 @@ describe("SiteAccessService", () => {
 
     expect((await service.reconcile()).ok).toBe(false);
     expect(cleared).toEqual([first, second]);
+  });
+
+  it("serializes concurrent reconciliation, registration, and injection operations", async () => {
+    class ConcurrentAdapter extends FakeSiteAccessAdapter {
+      activeContains = 0;
+      maxActiveContains = 0;
+
+      override async containsOrigin(originMatch: string): Promise<boolean> {
+        this.activeContains += 1;
+        this.maxActiveContains = Math.max(this.maxActiveContains, this.activeContains);
+        await Promise.resolve();
+        this.activeContains -= 1;
+        return super.containsOrigin(originMatch);
+      }
+    }
+
+    const adapter = new ConcurrentAdapter();
+    const url = new URL("https://example.com/page");
+    const origin = getOrigin(url);
+    adapter.grants.add("https://example.com/*");
+    const repository: Pick<OverlayRepository, "clearOrigin" | "listOrigins"> = {
+      async clearOrigin() { return { ok: true, value: undefined }; },
+      async listOrigins() { return { ok: true, value: [origin] }; },
+    };
+    const service = new SiteAccessService(adapter, repository);
+
+    const [reconciled, ensured, injected] = await Promise.all([
+      service.reconcile(),
+      service.ensureOrigin(origin),
+      service.injectForUrl(url, 7),
+    ]);
+
+    expect(reconciled.ok).toBe(true);
+    expect(ensured.ok).toBe(true);
+    expect(injected.ok).toBe(true);
+    expect(adapter.maxActiveContains).toBe(1);
+    expect(adapter.injected).toEqual([{ files: ["content-scripts/overlay.js"], tabId: 7 }]);
   });
 
   it("removes malformed and revoked managed registrations", async () => {
