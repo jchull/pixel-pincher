@@ -14,6 +14,15 @@ describe("runtime content proof seam", () => {
     const image = firstHost.shadowRoot?.querySelector("img");
     expect(image).not.toBeNull();
     expect(image?.getAttribute("src")).toMatch(/^data:image\/svg\+xml,/);
+    expect(image?.width).toBe(96);
+
+    image?.dispatchEvent(new Event("load"));
+    expect(firstHost.dataset.imageStatus).toBe("loaded");
+    expect(firstHost.shadowRoot?.textContent).toContain("loaded");
+
+    image?.dispatchEvent(new Event("error"));
+    expect(firstHost.dataset.imageStatus).toBe("error");
+    expect(firstHost.shadowRoot?.textContent).toContain("blocked");
   });
 
   it("uses the Chrome permission double without a background relay", async () => {

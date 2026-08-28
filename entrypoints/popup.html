@@ -4,11 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pixel Pincher</title>
+    <script type="module" src="../src/popup/runtime-proof-ui.ts"></script>
   </head>
   <body>
     <main>
       <h1>Pixel Pincher</h1>
       <p>The overlay controls will be available here.</p>
+      <section aria-labelledby="runtime-proof-heading">
+        <h2 id="runtime-proof-heading">Runtime injection proof</h2>
+        <p>
+          On an HTTP or HTTPS tab, request access only to that tab's exact origin,
+          register the proof, and inject it into the top frame.
+        </p>
+        <button id="run-runtime-proof" type="button">Run runtime proof</button>
+        <p id="runtime-proof-status" aria-live="polite">
+          No runtime proof has been requested.
+        </p>
+      </section>
     </main>
   </body>
 </html>

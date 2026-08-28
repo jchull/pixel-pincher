@@ -1,7 +1,7 @@
 # Runtime injection preflight
 
 **Date:** 2026-08-28
-**Status:** automated seam verified; manual Chrome gate remains required.
+**Status:** automated seam and manual proof harness verified; dated manual Chrome results remain required.
 
 ## Chosen seam
 
@@ -12,32 +12,56 @@ script or broad required host permission. Task 3 must register the generated
 asset with `chrome.scripting.registerContentScripts` only after the popup has
 received an optional permission for one origin.
 
-The proof renderer mounts one Shadow DOM host and uses a data URL image. The
-DOM test proves that the host is idempotent and that its image source remains a
-data URL. It does **not** prove that a real page's CSP permits that source:
-Vitest's DOM does not enforce page CSP. The restrictive fixture at
+The proof renderer mounts one Shadow DOM host and uses a visibly patterned data
+URL image. It exposes a `data-image-status` of `loaded` or `error` plus visible
+status text, so CSP behavior can be observed in Chrome. The DOM test proves
+that the host is idempotent and that its image source remains a data URL. It
+does **not** prove that a real page's CSP permits that source: Vitest's DOM
+does not enforce page CSP. The restrictive fixture at
 `tests/fixtures/csp-page.html` deliberately allows only same-origin images, so
 it is the required browser test for this uncertainty.
 
+`src/popup/runtime-proof-ui.ts` requests optional permission for the active tab's exact
+HTTP(S) origin directly inside its button click handler. It then sends the
+origin and tab ID to `entrypoints/background.ts`. The background registers and
+injects the proof script only in that tab's top frame. Its registration sets
+`persistAcrossSessions: true`.
+
+The WXT runtime entrypoint is explicitly configured with
+`registration: "runtime"`. For WXT 0.20, the supported generated
+content-script path for `entrypoints/runtime-proof.content.ts` is
+`content-scripts/runtime-proof.js`. `pnpm build` runs
+`scripts/assert-runtime-proof-build.mjs`, which asserts that asset exists and
+that WXT did not emit a static manifest content script or required host
+permissions. The path is kept in `RUNTIME_PROOF_SCRIPT_PATH` for both runtime
+registration and injection.
+
 ## Automated evidence
 
-- `pnpm test` runs a JSDOM test for one Shadow DOM host, its data URL image,
-  and the Chrome permission-request test double.
-- `pnpm build` must be inspected to confirm WXT emits the runtime content
-  asset without a manifest `content_scripts` entry or broad `host_permissions`.
+- `pnpm test` runs JSDOM tests for one Shadow DOM host, its visible image
+  load/error state, the direct Chrome permission-request test double, exact
+  origin derivation, and registration/message boundaries.
+- `pnpm build` asserts that WXT emits the runtime content asset without a
+  manifest `content_scripts` entry or broad required `host_permissions`.
 
 ## Mandatory manual Chrome checks before Tasks 1–4
 
-1. Load the unpacked production build in Chrome and open the restrictive CSP
-   fixture over HTTP.
-2. From a popup click handler, request only `https://example.com/*`; verify it
-   is granted without granting a different origin.
-3. Register the generated runtime content-script asset for that origin, inject
-   it into the already-open tab, and verify it runs only in the top frame.
-4. Reload the page and restart Chrome; verify the registered script persists.
-5. Verify whether the Shadow DOM data URL image renders under the restrictive
-   CSP fixture. If it is blocked, replace the proof renderer with a canvas
-   renderer before implementing the overlay controller.
+1. Run `pnpm build`, load `.output/chrome-mv3` unpacked in Chrome, and serve
+   the restrictive CSP fixture over HTTP (for example,
+   `python3 -m http.server --directory tests/fixtures 8080`).
+2. Open the fixture at `http://localhost:8080/csp-page.html`, open the popup,
+   and click **Run runtime proof**. Confirm that the popup reports a direct
+   permission request and a successful registration/injection for that exact
+   origin.
+3. Open a different origin and verify it has not gained site access. Repeat the
+   popup action there only if you intend to grant that separate origin.
+4. On the fixture, confirm the proof is present only in the top frame and its
+   visible status says whether the patterned data URL image loaded or was
+   blocked. If it is blocked, replace the proof renderer with a canvas renderer
+   before implementing the overlay controller.
+5. Reload the fixture, restart Chrome, and return to the same origin. Verify
+   that the registration persisted; then use the popup action to inject into
+   the already-open active document again.
 
-No manual Chrome result has been claimed in this commit. This remains a hard
-browser gate for Tasks 1 through 4.
+Record dated results below before Tasks 1 through 4. No manual Chrome result
+has been claimed in this commit, so this remains a hard browser gate.
