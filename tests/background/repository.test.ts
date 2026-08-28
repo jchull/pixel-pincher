@@ -394,6 +394,40 @@ describe("OverlayRepository", () => {
     expect(storage.values[imageRecordKey(shared.metadata.id)]).toBeDefined();
   });
 
+  it("blocks replacement of a duplicated current reference without deleting the other origin image", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    const firstUrl = new URL("https://first.test/page");
+    const secondUrl = new URL("https://second.test/page");
+    const shared = reference({ id: "123e4567-e89b-42d3-a456-426614174040" });
+    const independent = reference({ id: "123e4567-e89b-42d3-a456-426614174041", dataUrl: "data:image/png;base64,d29ybGQ=" });
+    const replacement = reference({ id: "123e4567-e89b-42d3-a456-426614174042", dataUrl: "data:image/png;base64,cmVwbGFjZWQ=" });
+    expect((await repository.replaceReference({ url: firstUrl, reference: shared })).ok).toBe(true);
+    expect((await repository.replaceReference({ url: secondUrl, reference: independent })).ok).toBe(true);
+
+    const secondOrigin = deriveOrigin(secondUrl);
+    if (secondOrigin === undefined) throw new Error("Known HTTPS URL must derive an origin.");
+    storage.values[originRecordKey(secondOrigin)] = {
+      schemaVersion: 1,
+      revision: 1,
+      origin: secondOrigin,
+      settings: { visible: true, opacity: 0.5, inverted: false, sizing: { kind: "fit-width", lastScalePercent: 100 }, interactionMode: "click-through" },
+      reference: shared.metadata,
+    };
+    storage.resetCalls();
+
+    expect(await repository.replaceReference({ url: firstUrl, reference: replacement })).toEqual({
+      ok: false,
+      error: expect.objectContaining({ code: "invalid-stored-data" }),
+    });
+    expect(storage.writes).toHaveLength(0);
+    expect(storage.removes).toHaveLength(0);
+    expect(storage.values[imageRecordKey(shared.metadata.id)]).toBeDefined();
+
+    const secondHydration = await repository.readHydration(secondUrl);
+    expect(secondHydration.ok && secondHydration.value.reference?.metadata.id).toBe(shared.metadata.id);
+  });
+
   it("clears corrupt target records and indexes without removing unrelated data", async () => {
     const storage = new MemoryStorage();
     const repository = new OverlayRepository(storage);

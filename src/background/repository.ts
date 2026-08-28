@@ -142,13 +142,6 @@ export class OverlayRepository {
     const state = await this.#load(url);
     if (!state.ok) return state;
     const current = snapshot(state.value);
-    try {
-      if (current.reference !== null) {
-        await this.#assertReferenceHasUniqueOwner(current.reference.id, state.value.origin);
-      }
-    } catch (error: unknown) {
-      return error instanceof AppError ? { ok: false, error } : repositoryFailure();
-    }
     if (current.reference === null) {
       return { ok: true, value: { snapshot: { ...current, reference: null }, reference: null } };
     }
@@ -216,6 +209,9 @@ export class OverlayRepository {
           return before;
         }
 
+        if (before.reference !== null) {
+          await this.#assertReferenceHasUniqueOwner(before.reference.id, state.origin);
+        }
         await this.#assertReferenceIdIsUnownedByOtherOrigin(reference.metadata.id, state.origin);
 
         if (existingValue !== undefined) {
