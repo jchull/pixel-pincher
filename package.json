@@ -1,0 +1,25 @@
+{
+  "name": "pixel-pincher",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser extension for overlaying reference images on web pages.",
+  "type": "module",
+  "scripts": {
+    "build": "wxt build",
+    "dev": "wxt",
+    "check": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/chrome": "^0.0.306",
+    "@typescript-eslint/eslint-plugin": "^8.31.1",
+    "@typescript-eslint/parser": "^8.31.1",
+    "eslint": "^9.29.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.68.0",
+    "vitest": "^3.2.4",
+    "wxt": "^0.20.4"
+  }
+}
