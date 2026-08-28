@@ -92,9 +92,16 @@ function sameMetadata(left: ReferenceMetadata, right: ReferenceMetadata): boolea
     left.importedAt === right.importedAt;
 }
 
+function nextRevision(current: number): number {
+  if (current >= Number.MAX_SAFE_INTEGER) {
+    throw new AppError("invalid-stored-data");
+  }
+  return current + 1;
+}
+
 function snapshot(state: LoadedState): OverlaySnapshot {
   const record = state.originRecord;
-  const revision = Math.max(record?.revision ?? 0, state.pageRecord?.revision ?? 0);
+  const revision = record?.revision ?? 0;
   const settings: OverlaySettings = {
     ...(record?.settings ?? DEFAULT_ORIGIN_SETTINGS),
     placement: state.pageRecord?.placement ?? DEFAULT_SETTINGS.placement,
@@ -114,7 +121,16 @@ export class OverlayRepository {
 
   async readSnapshot(url: URL): Promise<Result<OverlaySnapshot, RepositoryError>> {
     const state = await this.#load(url);
-    return state.ok ? { ok: true, value: snapshot(state.value) } : state;
+    if (!state.ok) return state;
+    try {
+      const current = snapshot(state.value);
+      if (current.reference !== null) {
+        await this.#assertReferenceHasUniqueOwner(current.reference.id, state.value.origin);
+      }
+      return { ok: true, value: current };
+    } catch (error: unknown) {
+      return error instanceof AppError ? { ok: false, error } : repositoryFailure();
+    }
   }
 
   /** Backwards-compatible alias for callers created before the Task 2 contract was finalized. */
@@ -126,6 +142,13 @@ export class OverlayRepository {
     const state = await this.#load(url);
     if (!state.ok) return state;
     const current = snapshot(state.value);
+    try {
+      if (current.reference !== null) {
+        await this.#assertReferenceHasUniqueOwner(current.reference.id, state.value.origin);
+      }
+    } catch (error: unknown) {
+      return error instanceof AppError ? { ok: false, error } : repositoryFailure();
+    }
     if (current.reference === null) {
       return { ok: true, value: { snapshot: { ...current, reference: null }, reference: null } };
     }
@@ -152,7 +175,8 @@ export class OverlayRepository {
       const { patch } = input;
       const before = snapshot(state);
       const next = patchSettings(before.settings, patch);
-      const revision = before.revision + 1;
+      if (JSON.stringify(before.settings) === JSON.stringify(next)) return before;
+      const revision = nextRevision(before.revision);
       const origin: OriginRecordV1 = { schemaVersion: 1, revision, origin: state.origin, settings: originSettings(next), reference: before.reference };
       const values: Record<string, unknown> = { [originRecordKey(state.origin)]: origin };
       if (patch.kind === "placement") {
@@ -207,7 +231,7 @@ export class OverlayRepository {
           createdImage = true;
         }
 
-        const revision = before.revision + 1;
+        const revision = nextRevision(before.revision);
         const origin: OriginRecordV1 = { schemaVersion: 1, revision, origin: state.origin, settings: originSettings(before.settings), reference: reference.metadata };
         await this.#writeWithIndex(state.origin, { [originRecordKey(state.origin)]: origin });
         if (before.reference !== null) {
@@ -226,20 +250,43 @@ export class OverlayRepository {
   async clearOrigin(origin: Origin): Promise<Result<void, RepositoryError>> {
     return this.#locked(origin, async () => this.#withMaintenance(async () => {
       try {
-        const values = await this.#adapter.get([originRecordKey(origin), ORIGIN_INDEX_KEY]);
         const allValues = await this.#adapter.readAll();
-        const record = values[originRecordKey(origin)] === undefined ? null : parseOriginRecordV1(values[originRecordKey(origin)]);
-        if (record !== null && (!record.ok || record.value.origin !== origin)) return invalidStoredData();
-        const index = values[ORIGIN_INDEX_KEY] === undefined
-          ? { ok: true as const, value: emptyIndex() }
-          : parseOriginIndexV1(values[ORIGIN_INDEX_KEY]);
-        if (!index.ok) return invalidStoredData();
-        const pageKeys = this.#pageKeysForOrigin(allValues, origin);
-        const keys = [originRecordKey(origin), ...pageKeys];
-        if (record?.value.reference !== null && record !== null) keys.push(imageRecordKey(record.value.reference.id));
+        const targetValue = allValues[originRecordKey(origin)];
+        const targetRecord = targetValue === undefined ? null : parseOriginRecordV1(targetValue);
+        const remainingOrigins = new Set<Origin>();
+        let targetReferenceId: ReferenceMetadata["id"] | undefined;
+        let duplicateReferenceOwner = false;
+
+        for (const [key, value] of Object.entries(allValues)) {
+          if (!key.startsWith("pixel-pincher:origin:")) continue;
+          const record = parseOriginRecordV1(value);
+          if (!record.ok || key !== originRecordKey(record.value.origin)) continue;
+          if (record.value.origin === origin) {
+            if (record.value.reference !== null) targetReferenceId = record.value.reference.id;
+            continue;
+          }
+          remainingOrigins.add(record.value.origin);
+          if (targetReferenceId !== undefined && record.value.reference?.id === targetReferenceId) {
+            duplicateReferenceOwner = true;
+          }
+        }
+
+        if (targetRecord !== null && targetRecord.ok && targetRecord.value.origin === origin && targetRecord.value.reference !== null) {
+          targetReferenceId = targetRecord.value.reference.id;
+          for (const [key, value] of Object.entries(allValues)) {
+            if (!key.startsWith("pixel-pincher:origin:")) continue;
+            const record = parseOriginRecordV1(value);
+            if (record.ok && record.value.origin !== origin && record.value.reference?.id === targetReferenceId) {
+              duplicateReferenceOwner = true;
+            }
+          }
+        }
+        if (duplicateReferenceOwner) return invalidStoredData();
+
+        const keys = [originRecordKey(origin), ...this.#pageKeysForOrigin(allValues, origin)];
+        if (targetReferenceId !== undefined) keys.push(imageRecordKey(targetReferenceId));
         await this.#adapter.remove(keys);
-        const remainingOrigins = index.value.origins.filter((item) => item !== origin);
-        await this.#adapter.set({ [ORIGIN_INDEX_KEY]: { schemaVersion: 1, origins: remainingOrigins } });
+        await this.#adapter.set({ [ORIGIN_INDEX_KEY]: { schemaVersion: 1, origins: [...remainingOrigins].sort() } });
         return { ok: true, value: undefined };
       } catch {
         return repositoryFailure();
@@ -293,12 +340,19 @@ export class OverlayRepository {
 
       const origins = new Set<Origin>();
       const referencedImages = new Set<string>();
+      const imageOwners = new Map<string, Origin>();
       for (const [key, value] of Object.entries(values)) {
         if (!key.startsWith("pixel-pincher:origin:")) continue;
         const record = parseOriginRecordV1(value);
         if (!record.ok || key !== originRecordKey(record.value.origin)) return invalidStoredData();
         origins.add(record.value.origin);
-        if (record.value.reference !== null) referencedImages.add(imageRecordKey(record.value.reference.id));
+        if (record.value.reference !== null) {
+          const imageKey = imageRecordKey(record.value.reference.id);
+          const owner = imageOwners.get(imageKey);
+          if (owner !== undefined && owner !== record.value.origin) return invalidStoredData();
+          imageOwners.set(imageKey, record.value.origin);
+          referencedImages.add(imageKey);
+        }
       }
 
       const orphanKeys: string[] = [];
@@ -332,6 +386,7 @@ export class OverlayRepository {
       const pageRecord = values[pageKeyName] === undefined ? null : parsePageRecordV1(values[pageKeyName]);
       if ((originRecord !== null && !originRecord.ok) || (pageRecord !== null && !pageRecord.ok)) return invalidStoredData();
       if ((originRecord !== null && originRecord.value.origin !== origin) || (pageRecord !== null && (pageRecord.value.origin !== origin || pageRecord.value.pageKey !== pageKey))) return invalidStoredData();
+      if (pageRecord !== null && (originRecord === null || pageRecord.value.revision > originRecord.value.revision)) return invalidStoredData();
       return { ok: true, value: { origin, pageKey, originRecord: originRecord?.value ?? null, pageRecord: pageRecord?.value ?? null } };
     } catch {
       return repositoryFailure();
@@ -393,6 +448,25 @@ export class OverlayRepository {
         throw new AppError("storage-failed");
       }
     }
+  }
+
+  async #assertReferenceHasUniqueOwner(referenceId: ReferenceMetadata["id"], owner: Origin): Promise<void> {
+    const values = await this.#adapter.readAll();
+    let owners = 0;
+    for (const [key, value] of Object.entries(values)) {
+      if (!key.startsWith("pixel-pincher:origin:")) continue;
+      const record = parseOriginRecordV1(value);
+      if (!record.ok || key !== originRecordKey(record.value.origin)) {
+        throw new AppError("invalid-stored-data");
+      }
+      if (record.value.reference?.id === referenceId) {
+        owners += 1;
+        if (record.value.origin !== owner || owners > 1) {
+          throw new AppError("invalid-stored-data");
+        }
+      }
+    }
+    if (owners !== 1) throw new AppError("invalid-stored-data");
   }
 
   #pageKeysForOrigin(values: Readonly<Record<string, unknown>>, origin: Origin): string[] {

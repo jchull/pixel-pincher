@@ -6,6 +6,7 @@ import {
   deriveOrigin,
   derivePageKey,
   imageRecordKey,
+  originRecordKey,
   ORIGIN_INDEX_KEY,
   pageRecordKey,
 } from "../../src/shared/keys";
@@ -208,7 +209,7 @@ describe("OverlayRepository", () => {
 
     storage.values[ORIGIN_INDEX_KEY] = { schemaVersion: 2, origins: [] };
     expect(await repository.listOrigins()).toEqual({ ok: false, error: expect.objectContaining({ code: "invalid-stored-data" }) });
-    expect(await repository.clearOrigin(origin)).toEqual({ ok: false, error: expect.objectContaining({ code: "invalid-stored-data" }) });
+    expect(await repository.clearOrigin(origin)).toEqual({ ok: true, value: undefined });
 
     storage.values[ORIGIN_INDEX_KEY] = { schemaVersion: 1, origins: [origin] };
     expect(await repository.listOrigins()).toEqual({ ok: false, error: expect.objectContaining({ code: "invalid-stored-data" }) });
@@ -365,5 +366,87 @@ describe("OverlayRepository", () => {
     const secondSnapshot = await repository.readSnapshot(secondPage);
     expect(firstSnapshot.ok && firstSnapshot.value.settings).toMatchObject({ opacity: 0.25, placement: { x: 1, y: 2 } });
     expect(secondSnapshot.ok && secondSnapshot.value.settings).toMatchObject({ opacity: 0.25, placement: { x: 3, y: 4 } });
+  });
+
+  it("reports persisted duplicate image ownership and never deletes the shared image", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    const firstUrl = new URL("https://first.test/page");
+    const secondUrl = new URL("https://second.test/page");
+    const shared = reference({ id: "123e4567-e89b-42d3-a456-426614174030" });
+    const independent = reference({ id: "123e4567-e89b-42d3-a456-426614174031", dataUrl: "data:image/png;base64,d29ybGQ=" });
+    expect((await repository.replaceReference({ url: firstUrl, reference: shared })).ok).toBe(true);
+    expect((await repository.replaceReference({ url: secondUrl, reference: independent })).ok).toBe(true);
+    const secondOrigin = deriveOrigin(secondUrl);
+    if (secondOrigin === undefined) throw new Error("Known HTTPS URL must derive an origin.");
+    storage.values[originRecordKey(secondOrigin)] = {
+      schemaVersion: 1,
+      revision: 1,
+      origin: secondOrigin,
+      settings: { visible: true, opacity: 0.5, inverted: false, sizing: { kind: "fit-width", lastScalePercent: 100 }, interactionMode: "click-through" },
+      reference: shared.metadata,
+    };
+    const firstOrigin = deriveOrigin(firstUrl);
+    if (firstOrigin === undefined) throw new Error("Known HTTPS URL must derive an origin.");
+    expect(await repository.readSnapshot(firstUrl)).toEqual({ ok: false, error: expect.objectContaining({ code: "invalid-stored-data" }) });
+    expect(await repository.cleanupOrphans()).toEqual({ ok: false, error: expect.objectContaining({ code: "invalid-stored-data" }) });
+    expect(await repository.clearOrigin(firstOrigin)).toEqual({ ok: false, error: expect.objectContaining({ code: "invalid-stored-data" }) });
+    expect(storage.values[imageRecordKey(shared.metadata.id)]).toBeDefined();
+  });
+
+  it("clears corrupt target records and indexes without removing unrelated data", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    const targetUrl = new URL("https://target.test/page");
+    const otherUrl = new URL("https://other.test/page");
+    const targetOrigin = deriveOrigin(targetUrl);
+    const targetPage = derivePageKey(targetUrl);
+    const otherOrigin = deriveOrigin(otherUrl);
+    if (targetOrigin === undefined || targetPage === undefined || otherOrigin === undefined) throw new Error("Known HTTPS URLs must derive storage identities.");
+    expect((await repository.updateSettings({ url: otherUrl, patch: { kind: "visibility", visible: false } })).ok).toBe(true);
+    storage.values[originRecordKey(targetOrigin)] = { corrupt: true };
+    storage.values[pageRecordKey(targetPage)] = { corrupt: true };
+    storage.values[ORIGIN_INDEX_KEY] = { corrupt: true };
+    expect(await repository.clearOrigin(targetOrigin)).toEqual({ ok: true, value: undefined });
+    expect(storage.values[originRecordKey(targetOrigin)]).toBeUndefined();
+    expect(storage.values[pageRecordKey(targetPage)]).toBeUndefined();
+    expect(storage.values[originRecordKey(otherOrigin)]).toBeDefined();
+    expect(storage.values[ORIGIN_INDEX_KEY]).toEqual({ schemaVersion: 1, origins: [otherOrigin] });
+  });
+
+  it("rejects inconsistent snapshots and exhausted revisions before writes", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    const origin = deriveOrigin(url);
+    const page = derivePageKey(url);
+    if (origin === undefined || page === undefined) throw new Error("Known HTTPS URL must derive storage identities.");
+    storage.values[pageRecordKey(page)] = { schemaVersion: 1, revision: 1, origin, pageKey: page, placement: { x: 0, y: 0 } };
+    expect(await repository.readSnapshot(url)).toEqual({ ok: false, error: expect.objectContaining({ code: "invalid-stored-data" }) });
+    storage.values[originRecordKey(origin)] = { schemaVersion: 1, revision: 0, origin, settings: { visible: true, opacity: 0.5, inverted: false, sizing: { kind: "fit-width", lastScalePercent: 100 }, interactionMode: "click-through" }, reference: null };
+    expect(await repository.readSnapshot(url)).toEqual({ ok: false, error: expect.objectContaining({ code: "invalid-stored-data" }) });
+    storage.values[pageRecordKey(page)] = { schemaVersion: 1, revision: Number.MAX_SAFE_INTEGER, origin, pageKey: page, placement: { x: 0, y: 0 } };
+    storage.values[originRecordKey(origin)] = { schemaVersion: 1, revision: Number.MAX_SAFE_INTEGER, origin, settings: { visible: true, opacity: 0.5, inverted: false, sizing: { kind: "fit-width", lastScalePercent: 100 }, interactionMode: "click-through" }, reference: null };
+    storage.resetCalls();
+    expect(await repository.updateSettings({ url, patch: { kind: "opacity", opacity: 0.25 } })).toEqual({ ok: false, error: expect.objectContaining({ code: "invalid-stored-data" }) });
+    expect(storage.writes).toHaveLength(0);
+  });
+
+  it("does not write no-op settings and preserves index membership across concurrent origins", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    const firstUrl = new URL("https://first.test/page");
+    const secondUrl = new URL("https://second.test/page");
+    expect((await repository.updateSettings({ url: firstUrl, patch: { kind: "opacity", opacity: 0.5 } })).ok).toBe(true);
+    storage.resetCalls();
+    expect((await repository.updateSettings({ url: firstUrl, patch: { kind: "opacity", opacity: 0.5 } })).ok).toBe(true);
+    expect(storage.writes).toHaveLength(0);
+    await Promise.all([
+      repository.updateSettings({ url: firstUrl, patch: { kind: "visibility", visible: false } }),
+      repository.updateSettings({ url: secondUrl, patch: { kind: "inversion", inverted: true } }),
+    ]);
+    const firstOrigin = deriveOrigin(firstUrl);
+    const secondOrigin = deriveOrigin(secondUrl);
+    if (firstOrigin === undefined || secondOrigin === undefined) throw new Error("Known HTTPS URLs must derive origins.");
+    expect(await repository.listOrigins()).toEqual({ ok: true, value: [firstOrigin, secondOrigin] });
   });
 });
