@@ -3,7 +3,6 @@ import {
   DEFAULT_ORIGIN_SETTINGS,
   DEFAULT_SETTINGS,
   type Hydration,
-  type ImportedReference,
   type Origin,
   type OriginIndexV1,
   type OriginRecordV1,
@@ -11,9 +10,13 @@ import {
   type OverlaySnapshot,
   type PageKey,
   type PageRecordV1,
+  type ReferenceMetadata,
+  type ReplaceReferenceInput,
   type RepositoryError,
   type Result,
   type SettingsPatch,
+  type UpdatePlacementInput,
+  type UpdateSettingsInput,
 } from "../shared/contracts";
 import {
   imageRecordKey,
@@ -39,6 +42,12 @@ type LoadedState = Readonly<{
   originRecord: OriginRecordV1 | null;
   pageRecord: PageRecordV1 | null;
 }>;
+
+export type {
+  ReplaceReferenceInput,
+  UpdatePlacementInput,
+  UpdateSettingsInput,
+} from "../shared/contracts";
 
 function repositoryFailure(): Result<never, RepositoryError> {
   return { ok: false, error: new AppError("storage-failed") };
@@ -71,6 +80,16 @@ function originSettings(settings: OverlaySettings): OriginRecordV1["settings"] {
 
 function emptyIndex(): OriginIndexV1 {
   return { schemaVersion: 1, origins: [] };
+}
+
+function sameMetadata(left: ReferenceMetadata, right: ReferenceMetadata): boolean {
+  return left.id === right.id &&
+    left.name === right.name &&
+    left.mimeType === right.mimeType &&
+    left.width === right.width &&
+    left.height === right.height &&
+    left.encodedBytes === right.encodedBytes &&
+    left.importedAt === right.importedAt;
 }
 
 function snapshot(state: LoadedState): OverlaySnapshot {
@@ -128,8 +147,9 @@ export class OverlayRepository {
     return this.readHydration(url);
   }
 
-  async updateSettings(url: URL, patch: SettingsPatch): Promise<Result<OverlaySnapshot, RepositoryError>> {
-    return this.#mutate(url, async (state) => {
+  async updateSettings(input: UpdateSettingsInput): Promise<Result<OverlaySnapshot, RepositoryError>> {
+    return this.#mutate(input.url, async (state) => {
+      const { patch } = input;
       const before = snapshot(state);
       const next = patchSettings(before.settings, patch);
       const revision = before.revision + 1;
@@ -144,27 +164,60 @@ export class OverlayRepository {
     });
   }
 
-  async updatePlacement(url: URL, placement: OverlaySettings["placement"]): Promise<Result<OverlaySnapshot, RepositoryError>> {
-    return this.updateSettings(url, { kind: "placement", placement });
+  async updatePlacement(input: UpdatePlacementInput): Promise<Result<OverlaySnapshot, RepositoryError>> {
+    return this.updateSettings({ url: input.url, patch: { kind: "placement", placement: input.placement } });
   }
 
-  async replaceReference(url: URL, reference: ImportedReference): Promise<Result<OverlaySnapshot, RepositoryError>> {
-    return this.#mutate(url, async (state) => {
+  async replaceReference(input: ReplaceReferenceInput): Promise<Result<OverlaySnapshot, RepositoryError>> {
+    return this.#mutate(input.url, async (state) => {
+      const { reference } = input;
       const before = snapshot(state);
-      const revision = before.revision + 1;
       const imageKey = imageRecordKey(reference.metadata.id);
-      const origin: OriginRecordV1 = { schemaVersion: 1, revision, origin: state.origin, settings: originSettings(before.settings), reference: reference.metadata };
+      let createdImage = false;
+
       try {
-        await this.#adapter.set({ [imageKey]: { schemaVersion: 1, referenceId: reference.metadata.id, dataUrl: reference.dataUrl } });
+        const existingValues = await this.#adapter.get([imageKey]);
+        const existingValue = existingValues[imageKey];
+        if (before.reference?.id === reference.metadata.id) {
+          if (!sameMetadata(before.reference, reference.metadata)) {
+            throw new AppError("storage-failed");
+          }
+          const existingImage = parseImageRecordV1(existingValue);
+          if (!existingImage.ok || existingImage.value.referenceId !== reference.metadata.id) {
+            throw new AppError("invalid-stored-data");
+          }
+          if (existingImage.value.dataUrl !== reference.dataUrl) {
+            throw new AppError("storage-failed");
+          }
+          return before;
+        }
+
+        if (existingValue !== undefined) {
+          const existingImage = parseImageRecordV1(existingValue);
+          if (!existingImage.ok || existingImage.value.referenceId !== reference.metadata.id) {
+            throw new AppError("invalid-stored-data");
+          }
+          if (existingImage.value.dataUrl !== reference.dataUrl) {
+            throw new AppError("storage-failed");
+          }
+        } else {
+          await this.#adapter.set({ [imageKey]: { schemaVersion: 1, referenceId: reference.metadata.id, dataUrl: reference.dataUrl } });
+          createdImage = true;
+        }
+
+        const revision = before.revision + 1;
+        const origin: OriginRecordV1 = { schemaVersion: 1, revision, origin: state.origin, settings: originSettings(before.settings), reference: reference.metadata };
         await this.#writeWithIndex(state.origin, { [originRecordKey(state.origin)]: origin });
-      } catch {
-        try { await this.#adapter.remove([imageKey]); } catch { /* best effort rollback */ }
-        throw new AppError("storage-failed");
+        if (before.reference !== null) {
+          try { await this.#adapter.remove([imageRecordKey(before.reference.id)]); } catch { /* replacement is committed */ }
+        }
+        return { revision, origin: state.origin, pageKey: state.pageKey, settings: before.settings, reference: reference.metadata };
+      } catch (error: unknown) {
+        if (createdImage) {
+          try { await this.#adapter.remove([imageKey]); } catch { /* best effort rollback */ }
+        }
+        throw error instanceof AppError ? error : new AppError("storage-failed");
       }
-      if (before.reference !== null && before.reference.id !== reference.metadata.id) {
-        try { await this.#adapter.remove([imageRecordKey(before.reference.id)]); } catch { /* replacement already committed */ }
-      }
-      return { revision, origin: state.origin, pageKey: state.pageKey, settings: before.settings, reference: reference.metadata };
     });
   }
 
@@ -174,17 +227,16 @@ export class OverlayRepository {
         const values = await this.#adapter.get([originRecordKey(origin), ORIGIN_INDEX_KEY]);
         const allValues = await this.#adapter.readAll();
         const record = values[originRecordKey(origin)] === undefined ? null : parseOriginRecordV1(values[originRecordKey(origin)]);
-        const validRecord = record !== null && record.ok && record.value.origin === origin ? record.value : null;
+        if (record !== null && (!record.ok || record.value.origin !== origin)) return invalidStoredData();
         const index = values[ORIGIN_INDEX_KEY] === undefined
           ? { ok: true as const, value: emptyIndex() }
           : parseOriginIndexV1(values[ORIGIN_INDEX_KEY]);
+        if (!index.ok) return invalidStoredData();
         const pageKeys = this.#pageKeysForOrigin(allValues, origin);
         const keys = [originRecordKey(origin), ...pageKeys];
-        if (validRecord?.reference !== null && validRecord !== null) keys.push(imageRecordKey(validRecord.reference.id));
+        if (record?.value.reference !== null && record !== null) keys.push(imageRecordKey(record.value.reference.id));
         await this.#adapter.remove(keys);
-        const remainingOrigins = index.ok
-          ? index.value.origins.filter((item) => item !== origin)
-          : this.#originsFromValues(allValues, origin);
+        const remainingOrigins = index.value.origins.filter((item) => item !== origin);
         await this.#adapter.set({ [ORIGIN_INDEX_KEY]: { schemaVersion: 1, origins: remainingOrigins } });
         return { ok: true, value: undefined };
       } catch {
@@ -197,7 +249,27 @@ export class OverlayRepository {
     return this.#withMaintenance(async () => {
       try {
         const values = await this.#adapter.readAll();
-        return { ok: true, value: this.#originsFromValues(values) };
+        const storedIndex = values[ORIGIN_INDEX_KEY] === undefined
+          ? { ok: true as const, value: emptyIndex() }
+          : parseOriginIndexV1(values[ORIGIN_INDEX_KEY]);
+        if (!storedIndex.ok) return invalidStoredData();
+        const actualOrigins: Origin[] = [];
+        for (const [key, value] of Object.entries(values)) {
+          if (!key.startsWith("pixel-pincher:origin:")) continue;
+          const record = parseOriginRecordV1(value);
+          if (!record.ok || key !== originRecordKey(record.value.origin)) return invalidStoredData();
+          actualOrigins.push(record.value.origin);
+        }
+        for (const origin of storedIndex.value.origins) {
+          const record = parseOriginRecordV1(values[originRecordKey(origin)]);
+          if (!record.ok || record.value.origin !== origin) return invalidStoredData();
+        }
+        const indexedOrigins = [...storedIndex.value.origins].sort();
+        const sortedActualOrigins = [...actualOrigins].sort();
+        if (indexedOrigins.length !== sortedActualOrigins.length || indexedOrigins.some((origin, index) => origin !== sortedActualOrigins[index])) {
+          return invalidStoredData();
+        }
+        return { ok: true, value: storedIndex.value.origins };
       } catch {
         return repositoryFailure();
       }
@@ -305,13 +377,6 @@ export class OverlayRepository {
       if (!parsed.ok) throw new AppError("invalid-stored-data");
       const origins = [...new Set([...parsed.value.origins, origin])].sort();
       await this.#adapter.set({ ...values, [ORIGIN_INDEX_KEY]: { schemaVersion: 1, origins } });
-  }
-
-  #originsFromValues(values: Readonly<Record<string, unknown>>, excluded?: Origin): Origin[] {
-    return Object.entries(values).flatMap(([key, value]) => {
-      const record = parseOriginRecordV1(value);
-      return record.ok && record.value.origin !== excluded && key === originRecordKey(record.value.origin) ? [record.value.origin] : [];
-    }).sort();
   }
 
   #pageKeysForOrigin(values: Readonly<Record<string, unknown>>, origin: Origin): string[] {

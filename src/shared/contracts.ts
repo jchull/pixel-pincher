@@ -92,6 +92,21 @@ export type SettingsPatch =
   | Readonly<{ kind: "interaction-mode"; interactionMode: InteractionMode }>
   | Readonly<{ kind: "placement"; placement: Placement }>;
 
+export type ReplaceReferenceInput = Readonly<{
+  url: URL;
+  reference: ImportedReference;
+}>;
+
+export type UpdateSettingsInput = Readonly<{
+  url: URL;
+  patch: SettingsPatch;
+}>;
+
+export type UpdatePlacementInput = Readonly<{
+  url: URL;
+  placement: Placement;
+}>;
+
 export type PopupRequest =
   | Readonly<{ kind: "get-tab-state"; requestId: string }>
   | Readonly<{ kind: "register-site"; requestId: string; url: string }>
