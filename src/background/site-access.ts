@@ -7,20 +7,28 @@ export const OVERLAY_REGISTRATION_PREFIX = "pixel-pincher-overlay-";
 
 export type RuntimeRegistration = Readonly<{
   allFrames: false;
+  css: readonly string[];
+  excludeMatches: readonly string[];
   id: string;
   js: readonly string[];
+  matchOriginAsFallback: false;
   matches: readonly string[];
   persistAcrossSessions: true;
   runAt: "document_idle";
+  world: "ISOLATED";
 }>;
 
 export type ObservedRegistration = Readonly<{
   allFrames: boolean;
+  css: readonly string[];
+  excludeMatches: readonly string[];
   id: string;
   js: readonly string[];
+  matchOriginAsFallback: boolean;
   matches: readonly string[];
   persistAcrossSessions: boolean;
   runAt: string;
+  world: string;
 }>;
 
 export interface SiteAccessAdapter {
@@ -51,15 +59,21 @@ function originFromMatch(value: string): Origin | undefined {
   }
 }
 
+function sameStrings(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
 function isExpectedRegistration(registration: ObservedRegistration, expected: RuntimeRegistration): boolean {
   return registration.id === expected.id &&
     registration.allFrames === expected.allFrames &&
     registration.persistAcrossSessions === expected.persistAcrossSessions &&
     registration.runAt === expected.runAt &&
-    registration.js.length === expected.js.length &&
-    registration.js.every((value, index) => value === expected.js[index]) &&
-    registration.matches.length === expected.matches.length &&
-    registration.matches.every((value, index) => value === expected.matches[index]);
+    registration.matchOriginAsFallback === expected.matchOriginAsFallback &&
+    registration.world === expected.world &&
+    sameStrings(registration.js, expected.js) &&
+    sameStrings(registration.css, expected.css) &&
+    sameStrings(registration.matches, expected.matches) &&
+    sameStrings(registration.excludeMatches, expected.excludeMatches);
 }
 
 function bytesToHex(bytes: Uint8Array): string {
@@ -77,11 +91,15 @@ export async function registrationIdForOrigin(origin: Origin): Promise<string> {
 export async function registrationForOrigin(origin: Origin): Promise<RuntimeRegistration> {
   return {
     allFrames: false,
+    css: [],
+    excludeMatches: [],
     id: await registrationIdForOrigin(origin),
     js: [OVERLAY_SCRIPT_PATH],
+    matchOriginAsFallback: false,
     matches: [originMatch(origin)],
     persistAcrossSessions: true,
     runAt: "document_idle",
+    world: "ISOLATED",
   };
 }
 
@@ -89,6 +107,7 @@ export async function registrationForOrigin(origin: Origin): Promise<RuntimeRegi
 export class SiteAccessService {
   readonly #adapter: SiteAccessAdapter;
   readonly #repository: Pick<OverlayRepository, "clearOrigin" | "listOrigins">;
+  #operation: Promise<void> = Promise.resolve();
 
   constructor(adapter: SiteAccessAdapter, repository: Pick<OverlayRepository, "clearOrigin" | "listOrigins">) {
     this.#adapter = adapter;
@@ -102,8 +121,86 @@ export class SiteAccessService {
   }
 
   async ensureOrigin(origin: Origin): Promise<Result<void, AccessError>> {
+    return this.#exclusive(() => this.#ensureOrigin(origin));
+  }
+
+  async injectForUrl(url: URL, tabId: number): Promise<Result<void, AccessError>> {
+    const origin = deriveOrigin(url);
+    if (origin === undefined || !Number.isSafeInteger(tabId) || tabId < 0) return accessFailure("content-unavailable");
+    return this.#exclusive(async () => {
+      try {
+        if (!await this.#adapter.containsOrigin(originMatch(origin))) return accessFailure("site-access-revoked");
+        const expected = await registrationForOrigin(origin);
+        const registrations = await this.#adapter.getRegistrations();
+        const current = registrations.find((registration) => registration.id === expected.id);
+        if (current === undefined || !isExpectedRegistration(current, expected)) return accessFailure("content-unavailable");
+        await this.#adapter.executeScript(tabId, [OVERLAY_SCRIPT_PATH]);
+        return { ok: true, value: undefined };
+      } catch {
+        return accessFailure("content-unavailable");
+      }
+    });
+  }
+
+  async unregisterOrigin(origin: Origin): Promise<Result<void, AccessError>> {
+    return this.#exclusive(() => this.#unregisterOrigin(origin));
+  }
+
+  /** Reconcile persisted sites and valid managed registrations without creating state from permission alone. */
+  async reconcile(): Promise<Result<void, AccessError>> {
+    return this.#exclusive(async () => {
+      const stored = await this.#repository.listOrigins();
+      if (!stored.ok) return accessFailure("content-unavailable");
+
+      try {
+        const initialRegistrations = await this.#adapter.getRegistrations();
+        const granted = new Set(await this.#adapter.getGrantedOrigins());
+        const storedOrigins = new Set(stored.value);
+        let firstFailure: Result<never, AccessError> | undefined;
+        const rememberFailure = (result: Result<void, AccessError>): void => {
+          if (!result.ok && firstFailure === undefined) firstFailure = result;
+        };
+
+        for (const origin of stored.value) {
+          if (granted.has(originMatch(origin))) {
+            rememberFailure(await this.#ensureOrigin(origin));
+          } else {
+            // Both operations are attempted even when the other fails so revocation
+            // cannot leave storage behind because a registration is already absent/bad.
+            rememberFailure(await this.#unregisterOrigin(origin));
+            const cleared = await this.#repository.clearOrigin(origin);
+            if (!cleared.ok && firstFailure === undefined) firstFailure = accessFailure("content-unavailable");
+          }
+        }
+
+        for (const registration of initialRegistrations) {
+          if (!registration.id.startsWith(OVERLAY_REGISTRATION_PREFIX)) continue;
+          const match = registration.matches.length === 1 ? originFromMatch(registration.matches[0] ?? "") : undefined;
+          if (match === undefined || registration.id !== await registrationIdForOrigin(match)) {
+            rememberFailure(await this.#unregisterRegistrationId(registration.id));
+            continue;
+          }
+          if (!granted.has(originMatch(match))) {
+            rememberFailure(await this.#unregisterOrigin(match));
+            continue;
+          }
+          if (!storedOrigins.has(match)) {
+            // A managed registration plus a grant is explicit enabled-without-reference
+            // state. Repair its current packaged shape without creating repository data.
+            rememberFailure(await this.#ensureOrigin(match));
+          }
+        }
+
+        return firstFailure ?? { ok: true, value: undefined };
+      } catch {
+        return accessFailure("content-unavailable");
+      }
+    });
+  }
+
+  async #ensureOrigin(origin: Origin): Promise<Result<void, AccessError>> {
     try {
-      if (!await this.#adapter.containsOrigin(originMatch(origin))) return accessFailure("site-access-denied");
+      if (!await this.#adapter.containsOrigin(originMatch(origin))) return accessFailure("site-access-revoked");
       const expected = await registrationForOrigin(origin);
       const registrations = await this.#adapter.getRegistrations();
       const current = registrations.find((registration) => registration.id === expected.id);
@@ -111,14 +208,18 @@ export class SiteAccessService {
         try {
           await this.#adapter.register(expected);
         } catch {
-          // A racing/restarted worker can report a duplicate registration. Final-state
-          // verification below makes that case idempotent without hiding a bad result.
+          // Duplicate registration can be a concurrent worker. Final-state verification
+          // below is the authority and distinguishes it from a failed mutation.
         }
       } else if (!isExpectedRegistration(current, expected)) {
-        await this.#adapter.update(expected);
+        try {
+          await this.#adapter.update(expected);
+        } catch {
+          // A second worker may have repaired it. Verify the final shape below.
+        }
       }
-      const finalRegistrations = await this.#adapter.getRegistrations();
-      const final = finalRegistrations.find((registration) => registration.id === expected.id);
+      if (!await this.#adapter.containsOrigin(originMatch(origin))) return accessFailure("site-access-revoked");
+      const final = (await this.#adapter.getRegistrations()).find((registration) => registration.id === expected.id);
       return final !== undefined && isExpectedRegistration(final, expected)
         ? { ok: true, value: undefined }
         : accessFailure("content-unavailable");
@@ -127,71 +228,43 @@ export class SiteAccessService {
     }
   }
 
-  async injectForUrl(url: URL, tabId: number): Promise<Result<void, AccessError>> {
-    if (!Number.isSafeInteger(tabId) || tabId < 0) return accessFailure("content-unavailable");
-    const ensured = await this.ensureForUrl(url);
-    if (!ensured.ok) return ensured;
+  async #unregisterOrigin(origin: Origin): Promise<Result<void, AccessError>> {
     try {
-      await this.#adapter.executeScript(tabId, [OVERLAY_SCRIPT_PATH]);
-      return { ok: true, value: undefined };
+      return this.#unregisterRegistrationId(await registrationIdForOrigin(origin));
     } catch {
       return accessFailure("content-unavailable");
     }
   }
 
-  async unregisterOrigin(origin: Origin): Promise<Result<void, AccessError>> {
+  async #unregisterRegistrationId(id: string): Promise<Result<void, AccessError>> {
     try {
-      const id = await registrationIdForOrigin(origin);
       const registrations = await this.#adapter.getRegistrations();
       if (registrations.some((registration) => registration.id === id)) {
-        await this.#adapter.unregister([id]);
+        try {
+          await this.#adapter.unregister([id]);
+        } catch {
+          // Missing registrations and races are idempotent only after final verification.
+        }
       }
-      return { ok: true, value: undefined };
+      const final = await this.#adapter.getRegistrations();
+      return final.some((registration) => registration.id === id)
+        ? accessFailure("content-unavailable")
+        : { ok: true, value: undefined };
     } catch {
       return accessFailure("content-unavailable");
     }
   }
 
-  /** Reconcile persisted sites and valid managed registrations without creating state from permission alone. */
-  async reconcile(): Promise<Result<void, AccessError>> {
-    const stored = await this.#repository.listOrigins();
-    if (!stored.ok) return accessFailure("content-unavailable");
+  async #exclusive<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.#operation;
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    this.#operation = previous.then(() => gate);
+    await previous;
     try {
-      const registrations = await this.#adapter.getRegistrations();
-      const storedOrigins = new Set(stored.value);
-      const granted = new Set(await this.#adapter.getGrantedOrigins());
-
-      for (const origin of stored.value) {
-        if (granted.has(originMatch(origin))) {
-          const ensured = await this.ensureOrigin(origin);
-          if (!ensured.ok) return ensured;
-        } else {
-          const removed = await this.unregisterOrigin(origin);
-          if (!removed.ok) return removed;
-          const cleared = await this.#repository.clearOrigin(origin);
-          if (!cleared.ok) return accessFailure("content-unavailable");
-        }
-      }
-
-      for (const registration of registrations) {
-        if (!registration.id.startsWith(OVERLAY_REGISTRATION_PREFIX)) continue;
-        const match = registration.matches.length === 1 ? originFromMatch(registration.matches[0] ?? "") : undefined;
-        if (match === undefined || registration.id !== await registrationIdForOrigin(match)) {
-          await this.#adapter.unregister([registration.id]);
-          continue;
-        }
-        if (!granted.has(originMatch(match))) {
-          await this.#adapter.unregister([registration.id]);
-          continue;
-        }
-        if (!storedOrigins.has(match)) {
-          const ensured = await this.ensureOrigin(match);
-          if (!ensured.ok) return ensured;
-        }
-      }
-      return { ok: true, value: undefined };
-    } catch {
-      return accessFailure("content-unavailable");
+      return await operation();
+    } finally {
+      release?.();
     }
   }
 }
@@ -212,21 +285,29 @@ export function createChromeSiteAccessAdapter(): SiteAccessAdapter {
       const registrations = await chrome.scripting.getRegisteredContentScripts();
       return registrations.map((registration) => ({
         allFrames: registration.allFrames ?? false,
+        css: registration.css ?? [],
+        excludeMatches: registration.excludeMatches ?? [],
         id: registration.id,
         js: registration.js ?? [],
+        matchOriginAsFallback: registration.matchOriginAsFallback ?? false,
         matches: registration.matches ?? [],
         persistAcrossSessions: registration.persistAcrossSessions ?? true,
         runAt: registration.runAt ?? "document_idle",
+        world: registration.world ?? "ISOLATED",
       }));
     },
     async register(registration) {
       await chrome.scripting.registerContentScripts([{
         allFrames: registration.allFrames,
+        css: [...registration.css],
+        excludeMatches: [...registration.excludeMatches],
         id: registration.id,
         js: [...registration.js],
+        matchOriginAsFallback: registration.matchOriginAsFallback,
         matches: [...registration.matches],
         persistAcrossSessions: registration.persistAcrossSessions,
         runAt: registration.runAt,
+        world: registration.world,
       }]);
     },
     async unregister(ids) {
@@ -235,11 +316,15 @@ export function createChromeSiteAccessAdapter(): SiteAccessAdapter {
     async update(registration) {
       await chrome.scripting.updateContentScripts([{
         allFrames: registration.allFrames,
+        css: [...registration.css],
+        excludeMatches: [...registration.excludeMatches],
         id: registration.id,
         js: [...registration.js],
+        matchOriginAsFallback: registration.matchOriginAsFallback,
         matches: [...registration.matches],
         persistAcrossSessions: registration.persistAcrossSessions,
         runAt: registration.runAt,
+        world: registration.world,
       }]);
     },
   };
