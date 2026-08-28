@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AppError,
   DEFAULT_ORIGIN_SETTINGS,
   DEFAULT_SETTINGS,
   MAX_IMAGE_ENCODED_BYTES,
   MAX_IMAGE_PIXELS,
   PUBLIC_ERROR_MESSAGES,
   publicError,
+  toPublicError,
 } from "../../src/shared/contracts";
 
 describe("shared contracts", () => {
@@ -44,6 +46,21 @@ describe("shared contracts", () => {
       const error = publicError(code);
       expect(error.code).toBe(code);
       expect(error.message).toBe(PUBLIC_ERROR_MESSAGES[error.code]);
+    }
+  });
+
+  it("strips internal causes from every AppError category", () => {
+    const codes = [
+      "unsupported-url", "site-access-denied", "site-access-revoked", "content-unavailable",
+      "invalid-image-type", "image-too-large", "image-too-many-pixels", "image-decode-failed",
+      "invalid-request", "invalid-stored-data", "storage-failed", "image-render-failed",
+    ] satisfies readonly (keyof typeof PUBLIC_ERROR_MESSAGES)[];
+    expect(codes).toHaveLength(12);
+    for (const code of codes) {
+      const internalCause = new Error(`internal ${code}`);
+      const error = new AppError(code, { cause: internalCause });
+      expect(toPublicError(error)).toEqual(publicError(code));
+      expect(toPublicError(error)).not.toHaveProperty("cause");
     }
   });
 });

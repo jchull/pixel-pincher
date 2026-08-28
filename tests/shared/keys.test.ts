@@ -16,11 +16,12 @@ function parsed<T>(result: { readonly ok: true; readonly value: T } | { readonly
 }
 
 describe("storage keys", () => {
-  it("derives canonical HTTP(S) origins and hashless page keys", () => {
-    expect(parsed(deriveOrigin("https://example.com/path#section"))).toBe("https://example.com");
-    expect(parsed(derivePageKey("https://example.com/path?tab=one#section"))).toBe("https://example.com/path?tab=one");
-    expect(deriveOrigin("ftp://example.com/path").ok).toBe(false);
-    expect(derivePageKey("https://example.com/path with spaces").ok).toBe(false);
+  it("derives canonical HTTP(S) origins and hashless page keys from URLs", () => {
+    const url = new URL("https://example.com/path?tab=one#section");
+    expect(deriveOrigin(url)).toBe("https://example.com");
+    expect(derivePageKey(url)).toBe("https://example.com/path?tab=one");
+    expect(deriveOrigin(new URL("ftp://example.com/path"))).toBeUndefined();
+    expect(derivePageKey(new URL("ftp://example.com/path"))).toBeUndefined();
   });
 
   it("uses stable prefixes and encodes every variable segment", () => {

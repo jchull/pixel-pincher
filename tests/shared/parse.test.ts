@@ -11,6 +11,7 @@ import {
   parseHydration,
   parseImportedReference,
   parseOrigin,
+  parseOverlaySnapshot,
   parseImageRecordV1,
   parseOriginIndexV1,
   parseOriginRecordV1,
@@ -165,5 +166,91 @@ describe("boundary parsers", () => {
     expect(parsePopupRequest({ kind: "replace-reference", requestId: "a", url: "https://example.com/page", reference: importedReference }).ok).toBe(true);
     expect(parsePopupRequest({ kind: "update-settings", requestId: "a", url: "https://example.com/page", patch: { kind: "visibility", visible: false } }).ok).toBe(true);
     expect(parsePopupRequest({ kind: "clear-site", requestId: "a", url: "https://example.com/page" }).ok).toBe(true);
+  });
+
+  it("parses snapshots directly and rejects malformed or extra snapshot fields", () => {
+    expect(parseOverlaySnapshot(snapshot).ok).toBe(true);
+    expect(parseOverlaySnapshot({ ...snapshot, revision: -1 }).ok).toBe(false);
+    expect(parseOverlaySnapshot({ ...snapshot, pageKey: "https://elsewhere.example/page" }).ok).toBe(false);
+    expect(parseOverlaySnapshot({ ...snapshot, extra: true }).ok).toBe(false);
+    expect(parseOverlaySnapshot({ ...snapshot, reference: { ...metadata, extra: true } }).ok).toBe(false);
+  });
+
+  it("covers every settings patch variant and its malformed counterpart", () => {
+    const patches = [
+      { valid: { kind: "visibility", visible: true }, invalid: { kind: "visibility", visible: "true" } },
+      { valid: { kind: "opacity", opacity: 0.25 }, invalid: { kind: "opacity", opacity: -0.1 } },
+      { valid: { kind: "inversion", inverted: true }, invalid: { kind: "inversion", inverted: 1 } },
+      { valid: { kind: "sizing", sizing: { kind: "scale", percent: 100 } }, invalid: { kind: "sizing", sizing: { kind: "scale", percent: 401 } } },
+      { valid: { kind: "interaction-mode", interactionMode: "drag" }, invalid: { kind: "interaction-mode", interactionMode: "pass-through" } },
+      { valid: { kind: "placement", placement: { x: 1, y: -1 } }, invalid: { kind: "placement", placement: { x: 1.5, y: -1 } } },
+    ];
+    for (const patch of patches) {
+      expect(parseSettingsPatch(patch.valid).ok).toBe(true);
+      expect(parseSettingsPatch(patch.invalid).ok).toBe(false);
+      expect(parseSettingsPatch({ ...patch.valid, extra: true }).ok).toBe(false);
+    }
+    expect(parseSettingsPatch({ kind: "unknown" }).ok).toBe(false);
+  });
+
+  it("covers popup and content variants, malformed fields, extras, and unknown discriminants", () => {
+    const popupRequests = [
+      { kind: "get-tab-state", requestId: "a" },
+      { kind: "register-site", requestId: "a", url: "https://example.com/page" },
+      { kind: "replace-reference", requestId: "a", url: "https://example.com/page", reference: importedReference },
+      { kind: "update-settings", requestId: "a", url: "https://example.com/page", patch: { kind: "visibility", visible: true } },
+      { kind: "clear-site", requestId: "a", url: "https://example.com/page" },
+    ];
+    for (const request of popupRequests) {
+      expect(parsePopupRequest(request).ok).toBe(true);
+      expect(parsePopupRequest({ ...request, extra: true }).ok).toBe(false);
+    }
+    expect(parsePopupRequest({ kind: "unknown", requestId: "a" }).ok).toBe(false);
+    expect(parsePopupRequest({ kind: "register-site", requestId: 1, url: "https://example.com/page" }).ok).toBe(false);
+
+    const contentRequests = [
+      { kind: "hydrate-overlay", hydration: { snapshot, reference: importedReference } },
+      { kind: "apply-settings", snapshot },
+      { kind: "clear-overlay", revision: 1 },
+    ];
+    for (const request of contentRequests) {
+      expect(parseContentRequest(request).ok).toBe(true);
+      expect(parseContentRequest({ ...request, extra: true }).ok).toBe(false);
+    }
+    expect(parseContentRequest({ kind: "unknown" }).ok).toBe(false);
+    expect(parseContentRequest({ kind: "clear-overlay", revision: -1 }).ok).toBe(false);
+
+    const contentEvents = [
+      { kind: "content-ready", url: "https://example.com/page" },
+      { kind: "placement-committed", url: "https://example.com/page", placement: { x: 0, y: 0 } },
+      { kind: "image-load-failed", url: "https://example.com/page", referenceId: id },
+    ];
+    for (const event of contentEvents) {
+      expect(parseContentEvent(event).ok).toBe(true);
+      expect(parseContentEvent({ ...event, extra: true }).ok).toBe(false);
+    }
+    expect(parseContentEvent({ kind: "unknown" }).ok).toBe(false);
+    expect(parseContentEvent({ kind: "content-ready", url: "ftp://example.com/" }).ok).toBe(false);
+  });
+
+  it("accepts every public error code and rejects unknown or extra errors", () => {
+    for (const [code, message] of Object.entries({
+      "unsupported-url": "This page cannot use Pixel Pincher.",
+      "site-access-denied": "Pixel Pincher needs permission for this site.",
+      "site-access-revoked": "Site access was removed.",
+      "content-unavailable": "The page overlay is unavailable. Reload the page and try again.",
+      "invalid-image-type": "Choose a PNG, JPEG, WebP, or SVG image.",
+      "image-too-large": "The image is too large. Choose an image up to 8 MiB.",
+      "image-too-many-pixels": "The image has too many pixels. Choose an image with at most 40 million pixels.",
+      "image-decode-failed": "Pixel Pincher could not decode that image.",
+      "invalid-request": "Pixel Pincher received an invalid request.",
+      "invalid-stored-data": "Stored Pixel Pincher data is invalid. Clear this site's data and try again.",
+      "storage-failed": "Pixel Pincher could not save this change.",
+      "image-render-failed": "Pixel Pincher could not render the reference image.",
+    })) {
+      expect(parsePublicError({ code, message }).ok).toBe(true);
+    }
+    expect(parsePublicError({ code: "unknown", message: "unknown" }).ok).toBe(false);
+    expect(parsePublicError({ code: "storage-failed", message: "Pixel Pincher could not save this change.", extra: true }).ok).toBe(false);
   });
 });

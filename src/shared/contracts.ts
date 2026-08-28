@@ -131,8 +131,56 @@ export const PUBLIC_ERROR_MESSAGES = {
 export type PublicErrorCode = keyof typeof PUBLIC_ERROR_MESSAGES;
 export type PublicError = Readonly<{ code: PublicErrorCode; message: string }>;
 
+export class AppError<Code extends PublicErrorCode = PublicErrorCode> extends Error {
+  readonly code: Code;
+
+  constructor(code: Code, options?: Readonly<{ cause?: unknown }>) {
+    super(PUBLIC_ERROR_MESSAGES[code], options);
+    this.name = "AppError";
+    this.code = code;
+  }
+}
+
+type ErrorFor<Code extends PublicErrorCode> = AppError<Code>;
+
+export type UnsupportedUrlError = ErrorFor<"unsupported-url">;
+export type SiteAccessDeniedError = ErrorFor<"site-access-denied">;
+export type SiteAccessRevokedError = ErrorFor<"site-access-revoked">;
+export type ContentUnavailableError = ErrorFor<"content-unavailable">;
+export type InvalidImageTypeError = ErrorFor<"invalid-image-type">;
+export type ImageTooLargeError = ErrorFor<"image-too-large">;
+export type ImageTooManyPixelsError = ErrorFor<"image-too-many-pixels">;
+export type ImageDecodeFailedError = ErrorFor<"image-decode-failed">;
+export type InvalidRequestError = ErrorFor<"invalid-request">;
+export type InvalidStoredDataError = ErrorFor<"invalid-stored-data">;
+export type StorageFailedError = ErrorFor<"storage-failed">;
+export type ImageRenderFailedError = ErrorFor<"image-render-failed">;
+
 export function publicError(code: PublicErrorCode): PublicError {
   return { code, message: PUBLIC_ERROR_MESSAGES[code] };
+}
+
+/** Convert an internal AppError to its stable, cause-free wire representation. */
+export function toPublicError(error: AppError): PublicError {
+  switch (error.code) {
+    case "unsupported-url":
+    case "site-access-denied":
+    case "site-access-revoked":
+    case "content-unavailable":
+    case "invalid-image-type":
+    case "image-too-large":
+    case "image-too-many-pixels":
+    case "image-decode-failed":
+    case "invalid-request":
+    case "invalid-stored-data":
+    case "storage-failed":
+    case "image-render-failed":
+      return publicError(error.code);
+    default: {
+      const exhaustive: never = error.code;
+      return exhaustive;
+    }
+  }
 }
 
 export const MAX_IMAGE_ENCODED_BYTES = 8 * 1024 * 1024;

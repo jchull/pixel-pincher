@@ -1,3 +1,5 @@
+import { deriveOrigin, derivePageKey } from "./keys";
+
 import {
   type ContentEvent,
   type ContentRequest,
@@ -5,8 +7,8 @@ import {
   type ImageRecordV1,
   type ImportedReference,
   type InteractionMode,
-  type MimeType,
   type Origin,
+  type MimeType,
   type OriginIndexV1,
   type OriginRecordV1,
   type OverlaySettings,
@@ -87,18 +89,6 @@ function isInteractionMode(value: unknown): value is InteractionMode {
   return value === "click-through" || value === "drag";
 }
 
-function isSupportedUrl(url: URL): boolean {
-  return url.protocol === "http:" || url.protocol === "https:";
-}
-
-function brandOrigin(value: string): Origin {
-  return value as Origin;
-}
-
-function brandPageKey(value: string): PageKey {
-  return value as PageKey;
-}
-
 function brandReferenceId(value: string): ReferenceId {
   return value as ReferenceId;
 }
@@ -126,50 +116,46 @@ export function parseSupportedUrl(value: unknown): Result<URL, PublicError> {
   } catch {
     return { ok: false, error: publicError("unsupported-url") };
   }
-  if (!isSupportedUrl(url) || raw !== url.toString()) {
+  if (deriveOrigin(url) === undefined || raw !== url.toString()) {
     return { ok: false, error: publicError("unsupported-url") };
   }
   return { ok: true, value: url };
 }
 
-export function deriveOrigin(value: unknown): Result<Origin, PublicError> {
+export function parseOrigin(value: unknown): Result<Origin, PublicError> {
   const raw = readString(value);
-  if (raw === undefined) return { ok: false, error: publicError("unsupported-url") };
+  if (raw === undefined) return failure("invalid-request");
+
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
     return { ok: false, error: publicError("unsupported-url") };
   }
-  if (!isSupportedUrl(url) || (raw !== url.toString() && raw !== url.origin)) {
+
+  const origin = deriveOrigin(url);
+  if (origin === undefined || raw !== origin) {
     return { ok: false, error: publicError("unsupported-url") };
   }
-  return { ok: true, value: brandOrigin(url.origin) };
-}
-
-export function derivePageKey(value: unknown): Result<PageKey, PublicError> {
-  const parsed = parseSupportedUrl(value);
-  if (!parsed.ok) return parsed;
-  parsed.value.hash = "";
-  return { ok: true, value: brandPageKey(parsed.value.toString()) };
-}
-
-export function parseOrigin(value: unknown): Result<Origin, PublicError> {
-  const raw = readString(value);
-  const derived = deriveOrigin(value);
-  if (!derived.ok || raw !== derived.value) {
-    return { ok: false, error: publicError("unsupported-url") };
-  }
-  return derived;
+  return { ok: true, value: origin };
 }
 
 export function parsePageKey(value: unknown): Result<PageKey, PublicError> {
   const raw = readString(value);
-  const derived = derivePageKey(value);
-  if (!derived.ok || raw !== derived.value) {
+  if (raw === undefined) return failure("invalid-request");
+
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
     return { ok: false, error: publicError("unsupported-url") };
   }
-  return derived;
+
+  const pageKey = derivePageKey(url);
+  if (pageKey === undefined || raw !== pageKey) {
+    return { ok: false, error: publicError("unsupported-url") };
+  }
+  return { ok: true, value: pageKey };
 }
 
 export function parseReferenceId(value: unknown): Result<ReferenceId, PublicError> {
