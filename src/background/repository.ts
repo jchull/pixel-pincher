@@ -26,6 +26,7 @@ import {
 } from "../shared/keys";
 import {
   parseImageRecordV1,
+  parseImportedReference,
   parseOriginIndexV1,
   parseOriginRecordV1,
   parsePageRecordV1,
@@ -86,17 +87,23 @@ function snapshot(state: LoadedState): OverlaySnapshot {
 export class OverlayRepository {
   readonly #adapter: StorageAdapter;
   readonly #locks = new Map<Origin, Promise<void>>();
+  #maintenance: Promise<void> = Promise.resolve();
 
   constructor(adapter: StorageAdapter) {
     this.#adapter = adapter;
   }
 
-  async getSnapshot(url: URL): Promise<Result<OverlaySnapshot, RepositoryError>> {
+  async readSnapshot(url: URL): Promise<Result<OverlaySnapshot, RepositoryError>> {
     const state = await this.#load(url);
     return state.ok ? { ok: true, value: snapshot(state.value) } : state;
   }
 
-  async hydrate(url: URL): Promise<Result<Hydration, RepositoryError>> {
+  /** Backwards-compatible alias for callers created before the Task 2 contract was finalized. */
+  async getSnapshot(url: URL): Promise<Result<OverlaySnapshot, RepositoryError>> {
+    return this.readSnapshot(url);
+  }
+
+  async readHydration(url: URL): Promise<Result<Hydration, RepositoryError>> {
     const state = await this.#load(url);
     if (!state.ok) return state;
     const current = snapshot(state.value);
@@ -107,11 +114,18 @@ export class OverlayRepository {
     try {
       const values = await this.#adapter.get([key]);
       const image = parseImageRecordV1(values[key]);
-      if (!image.ok || image.value.referenceId !== current.reference.id) return invalidStoredData();
-      return { ok: true, value: { snapshot: { ...current, reference: current.reference }, reference: { metadata: current.reference, dataUrl: image.value.dataUrl } } };
+      if (!image.ok || image.value.referenceId !== current.reference.id || key !== imageRecordKey(image.value.referenceId)) return invalidStoredData();
+      const imported = parseImportedReference({ metadata: current.reference, dataUrl: image.value.dataUrl });
+      if (!imported.ok) return invalidStoredData();
+      return { ok: true, value: { snapshot: { ...current, reference: current.reference }, reference: imported.value } };
     } catch {
       return repositoryFailure();
     }
+  }
+
+  /** Backwards-compatible alias for callers created before the Task 2 contract was finalized. */
+  async hydrate(url: URL): Promise<Result<Hydration, RepositoryError>> {
+    return this.readHydration(url);
   }
 
   async updateSettings(url: URL, patch: SettingsPatch): Promise<Result<OverlaySnapshot, RepositoryError>> {
@@ -125,10 +139,13 @@ export class OverlayRepository {
         const page: PageRecordV1 = { schemaVersion: 1, revision, origin: state.origin, pageKey: state.pageKey, placement: patch.placement };
         values[pageRecordKey(state.pageKey)] = page;
       }
-      await this.#adapter.set(values);
-      await this.#addToIndex(state.origin);
+      await this.#writeWithIndex(state.origin, values);
       return { revision, origin: state.origin, pageKey: state.pageKey, settings: next, reference: before.reference };
     });
+  }
+
+  async updatePlacement(url: URL, placement: OverlaySettings["placement"]): Promise<Result<OverlaySnapshot, RepositoryError>> {
+    return this.updateSettings(url, { kind: "placement", placement });
   }
 
   async replaceReference(url: URL, reference: ImportedReference): Promise<Result<OverlaySnapshot, RepositoryError>> {
@@ -139,8 +156,7 @@ export class OverlayRepository {
       const origin: OriginRecordV1 = { schemaVersion: 1, revision, origin: state.origin, settings: originSettings(before.settings), reference: reference.metadata };
       try {
         await this.#adapter.set({ [imageKey]: { schemaVersion: 1, referenceId: reference.metadata.id, dataUrl: reference.dataUrl } });
-        await this.#adapter.set({ [originRecordKey(state.origin)]: origin });
-        await this.#addToIndex(state.origin);
+        await this.#writeWithIndex(state.origin, { [originRecordKey(state.origin)]: origin });
       } catch {
         try { await this.#adapter.remove([imageKey]); } catch { /* best effort rollback */ }
         throw new AppError("storage-failed");
@@ -153,31 +169,47 @@ export class OverlayRepository {
   }
 
   async clearOrigin(origin: Origin): Promise<Result<void, RepositoryError>> {
-    return this.#locked(origin, async () => {
+    return this.#locked(origin, async () => this.#withMaintenance(async () => {
       try {
         const values = await this.#adapter.get([originRecordKey(origin), ORIGIN_INDEX_KEY]);
         const allValues = await this.#adapter.readAll();
         const record = values[originRecordKey(origin)] === undefined ? null : parseOriginRecordV1(values[originRecordKey(origin)]);
-        if (record !== null && !record.ok) return invalidStoredData();
+        const validRecord = record !== null && record.ok && record.value.origin === origin ? record.value : null;
         const index = values[ORIGIN_INDEX_KEY] === undefined
           ? { ok: true as const, value: emptyIndex() }
           : parseOriginIndexV1(values[ORIGIN_INDEX_KEY]);
-        if (!index.ok) return invalidStoredData();
         const pageKeys = this.#pageKeysForOrigin(allValues, origin);
         const keys = [originRecordKey(origin), ...pageKeys];
-        if (record !== null && record.value.reference !== null) {
-          keys.push(imageRecordKey(record.value.reference.id));
-        }
+        if (validRecord?.reference !== null && validRecord !== null) keys.push(imageRecordKey(validRecord.reference.id));
         await this.#adapter.remove(keys);
-        await this.#adapter.set({ [ORIGIN_INDEX_KEY]: { schemaVersion: 1, origins: index.value.origins.filter((item) => item !== origin) } });
+        const remainingOrigins = index.ok
+          ? index.value.origins.filter((item) => item !== origin)
+          : this.#originsFromValues(allValues, origin);
+        await this.#adapter.set({ [ORIGIN_INDEX_KEY]: { schemaVersion: 1, origins: remainingOrigins } });
         return { ok: true, value: undefined };
+      } catch {
+        return repositoryFailure();
+      }
+    }));
+  }
+
+  async listOrigins(): Promise<Result<readonly Origin[], RepositoryError>> {
+    return this.#withMaintenance(async () => {
+      try {
+        const values = await this.#adapter.readAll();
+        return { ok: true, value: this.#originsFromValues(values) };
       } catch {
         return repositoryFailure();
       }
     });
   }
 
+  async removeOrphans(): Promise<Result<void, RepositoryError>> {
+    return this.cleanupOrphans();
+  }
+
   async cleanupOrphans(): Promise<Result<void, RepositoryError>> {
+    return this.#withMaintenance(async () => {
     try {
       const values = await this.#adapter.readAll();
       const storedIndex = values[ORIGIN_INDEX_KEY] === undefined
@@ -211,6 +243,7 @@ export class OverlayRepository {
     } catch {
       return repositoryFailure();
     }
+    });
   }
 
   async #load(url: URL): Promise<Result<LoadedState, RepositoryError>> {
@@ -224,6 +257,7 @@ export class OverlayRepository {
       const originRecord = values[originKey] === undefined ? null : parseOriginRecordV1(values[originKey]);
       const pageRecord = values[pageKeyName] === undefined ? null : parsePageRecordV1(values[pageKeyName]);
       if ((originRecord !== null && !originRecord.ok) || (pageRecord !== null && !pageRecord.ok)) return invalidStoredData();
+      if ((originRecord !== null && originRecord.value.origin !== origin) || (pageRecord !== null && (pageRecord.value.origin !== origin || pageRecord.value.pageKey !== pageKey))) return invalidStoredData();
       return { ok: true, value: { origin, pageKey, originRecord: originRecord?.value ?? null, pageRecord: pageRecord?.value ?? null } };
     } catch {
       return repositoryFailure();
@@ -233,12 +267,12 @@ export class OverlayRepository {
   async #mutate(url: URL, operation: (state: LoadedState) => Promise<OverlaySnapshot>): Promise<Result<OverlaySnapshot, RepositoryError>> {
     const origin = deriveOrigin(url);
     if (origin === undefined) return invalidStoredData();
-    return this.#locked(origin, async () => {
+    return this.#locked(origin, async () => this.#withMaintenance(async () => {
       const state = await this.#load(url);
       if (!state.ok) return state;
       try { return { ok: true, value: await operation(state.value) }; }
       catch (error: unknown) { return error instanceof AppError ? { ok: false, error } : repositoryFailure(); }
-    });
+    }));
   }
 
   async #locked<T>(origin: Origin, operation: () => Promise<T>): Promise<T> {
@@ -252,17 +286,33 @@ export class OverlayRepository {
     finally { release?.(); if (this.#locks.get(origin) === queued) this.#locks.delete(origin); }
   }
 
-  async #addToIndex(origin: Origin): Promise<void> {
-    const values = await this.#adapter.get([ORIGIN_INDEX_KEY]);
-    const parsed = values[ORIGIN_INDEX_KEY] === undefined
-      ? { ok: true as const, value: emptyIndex() }
-      : parseOriginIndexV1(values[ORIGIN_INDEX_KEY]);
-    if (!parsed.ok) throw new AppError("invalid-stored-data");
-    const origins = [...parsed.value.origins, origin].filter((value, index, all) => all.indexOf(value) === index).sort();
-    const index: OriginIndexV1 = { schemaVersion: 1, origins };
-    await this.#adapter.set({ [ORIGIN_INDEX_KEY]: index });
+  async #withMaintenance<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.#maintenance;
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    this.#maintenance = previous.then(() => gate);
+    await previous;
+    try { return await operation(); }
+    finally { release?.(); }
   }
 
+  /** Writes the origin mutation and its index membership in one adapter set. */
+  async #writeWithIndex(origin: Origin, values: Readonly<Record<string, unknown>>): Promise<void> {
+      const stored = await this.#adapter.get([ORIGIN_INDEX_KEY]);
+      const parsed = stored[ORIGIN_INDEX_KEY] === undefined
+        ? { ok: true as const, value: emptyIndex() }
+        : parseOriginIndexV1(stored[ORIGIN_INDEX_KEY]);
+      if (!parsed.ok) throw new AppError("invalid-stored-data");
+      const origins = [...new Set([...parsed.value.origins, origin])].sort();
+      await this.#adapter.set({ ...values, [ORIGIN_INDEX_KEY]: { schemaVersion: 1, origins } });
+  }
+
+  #originsFromValues(values: Readonly<Record<string, unknown>>, excluded?: Origin): Origin[] {
+    return Object.entries(values).flatMap(([key, value]) => {
+      const record = parseOriginRecordV1(value);
+      return record.ok && record.value.origin !== excluded && key === originRecordKey(record.value.origin) ? [record.value.origin] : [];
+    }).sort();
+  }
 
   #pageKeysForOrigin(values: Readonly<Record<string, unknown>>, origin: Origin): string[] {
     return Object.keys(values).filter((key) => pageRecordKeyOrigin(key) === origin);

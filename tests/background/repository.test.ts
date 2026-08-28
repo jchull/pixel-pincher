@@ -59,13 +59,33 @@ describe("OverlayRepository", () => {
     expect([...storage.reads.flat(), ...storage.writes.flatMap((write) => Object.keys(write))].some((key) => key.includes(":image:"))).toBe(false);
   });
 
-  it("hydrates image data only after a reference exists and advances revisions", async () => {
+  it("hydrates validated image data only after a reference exists and advances revisions", async () => {
     const storage = new MemoryStorage();
     const repository = new OverlayRepository(storage);
-    const replaced = await repository.replaceReference(url, reference());
+    const imported = reference();
+    const replaced = await repository.replaceReference(url, imported);
     expect(replaced.ok && replaced.value.revision).toBe(1);
-    const hydration = await repository.hydrate(url);
+    const hydration = await repository.readHydration(url);
     expect(hydration.ok && hydration.value.reference?.metadata.name).toBe("reference.png");
+
+    storage.values[imageRecordKey(imported.metadata.id)] = {
+      schemaVersion: 1,
+      referenceId: imported.metadata.id,
+      dataUrl: "data:image/png;base64,AA==",
+    };
+    expect(await repository.hydrate(url)).toEqual({ ok: false, error: expect.objectContaining({ code: "invalid-stored-data" }) });
+  });
+
+  it("exposes the documented repository method names", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    const changed = await repository.updatePlacement(url, { x: 12, y: -3 });
+    expect(changed.ok && changed.value.settings.placement).toEqual({ x: 12, y: -3 });
+    expect(await repository.readSnapshot(url)).toEqual(await repository.getSnapshot(url));
+    const origin = deriveOrigin(url);
+    if (origin === undefined) throw new Error("Known HTTPS URL must derive an origin.");
+    expect(await repository.listOrigins()).toEqual({ ok: true, value: [origin] });
+    expect(await repository.removeOrphans()).toEqual({ ok: true, value: undefined });
   });
 
   it("clears unknown page values for one origin while preserving unrelated records", async () => {
