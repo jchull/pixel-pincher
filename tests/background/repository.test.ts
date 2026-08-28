@@ -19,9 +19,24 @@ class MemoryStorage implements StorageAdapter {
   readAllCalls = 0;
   #setCalls = 0;
   #failSetCall: number | undefined;
+  #failNextGet = false;
+  #failNextReadAll = false;
+  #failNextRemove = false;
 
   failSetOn(call: number): void {
     this.#failSetCall = call;
+  }
+
+  failNextGet(): void {
+    this.#failNextGet = true;
+  }
+
+  failNextReadAll(): void {
+    this.#failNextReadAll = true;
+  }
+
+  failNextRemove(): void {
+    this.#failNextRemove = true;
   }
 
   resetCalls(): void {
@@ -31,10 +46,18 @@ class MemoryStorage implements StorageAdapter {
   }
 
   async get(keys: readonly string[]): Promise<Readonly<Record<string, unknown>>> {
+    if (this.#failNextGet) {
+      this.#failNextGet = false;
+      throw new Error("planned get failure");
+    }
     this.reads.push([...keys]);
     return Object.fromEntries(keys.filter((key) => Object.hasOwn(this.values, key)).map((key) => [key, this.values[key]]));
   }
   async readAll(): Promise<Readonly<Record<string, unknown>>> {
+    if (this.#failNextReadAll) {
+      this.#failNextReadAll = false;
+      throw new Error("planned read-all failure");
+    }
     this.readAllCalls += 1;
     return { ...this.values };
   }
@@ -45,6 +68,10 @@ class MemoryStorage implements StorageAdapter {
     Object.assign(this.values, values);
   }
   async remove(keys: readonly string[]): Promise<void> {
+    if (this.#failNextRemove) {
+      this.#failNextRemove = false;
+      throw new Error("planned remove failure");
+    }
     this.removes.push([...keys]);
     for (const key of keys) delete this.values[key];
   }
@@ -52,10 +79,10 @@ class MemoryStorage implements StorageAdapter {
 
 const url = new URL("https://example.test/path#fragment");
 
-function reference() {
-  const dataUrl = "data:image/png;base64,aGVsbG8=";
+function reference(input: Readonly<{ id?: string; dataUrl?: string }> = {}) {
+  const dataUrl = input.dataUrl ?? "data:image/png;base64,aGVsbG8=";
   const parsed = parseImportedReference({
-    metadata: { id: "123e4567-e89b-42d3-a456-426614174000", name: "reference.png", mimeType: "image/png", width: 1, height: 1, encodedBytes: new TextEncoder().encode(dataUrl).byteLength, importedAt: 1 },
+    metadata: { id: input.id ?? "123e4567-e89b-42d3-a456-426614174000", name: "reference.png", mimeType: "image/png", width: 1, height: 1, encodedBytes: new TextEncoder().encode(dataUrl).byteLength, importedAt: 1 },
     dataUrl,
   });
   if (!parsed.ok) throw new Error("Test reference must parse.");
@@ -252,5 +279,91 @@ describe("OverlayRepository", () => {
     expect(await repository.cleanupOrphans()).toEqual({ ok: true, value: undefined });
     expect(storage.removes).toHaveLength(removeCount);
     expect(storage.writes).toHaveLength(writeCount);
+  });
+
+  it("rejects a ReferenceId already committed by another origin and preserves independent hydration", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    const firstUrl = new URL("https://first.test/page");
+    const secondUrl = new URL("https://second.test/page");
+    const firstReference = reference({ id: "123e4567-e89b-42d3-a456-426614174010" });
+    const secondReference = reference({ id: "123e4567-e89b-42d3-a456-426614174011", dataUrl: "data:image/png;base64,d29ybGQ=" });
+
+    expect((await repository.replaceReference({ url: firstUrl, reference: firstReference })).ok).toBe(true);
+    expect((await repository.replaceReference({ url: secondUrl, reference: secondReference })).ok).toBe(true);
+    expect(await repository.replaceReference({ url: secondUrl, reference: firstReference })).toEqual({
+      ok: false,
+      error: expect.objectContaining({ code: "storage-failed" }),
+    });
+
+    expect((await repository.readHydration(secondUrl)).ok).toBe(true);
+    const firstOrigin = deriveOrigin(firstUrl);
+    if (firstOrigin === undefined) throw new Error("Known HTTPS URL must derive an origin.");
+    expect(await repository.clearOrigin(firstOrigin)).toEqual({ ok: true, value: undefined });
+    const secondHydration = await repository.readHydration(secondUrl);
+    expect(secondHydration.ok && secondHydration.value.reference?.metadata.id).toBe(secondReference.metadata.id);
+
+    const replacement = reference({ id: "123e4567-e89b-42d3-a456-426614174012", dataUrl: "data:image/png;base64,YWdhaW4=" });
+    expect((await repository.replaceReference({ url: firstUrl, reference: replacement })).ok).toBe(true);
+    const independentHydration = await repository.readHydration(secondUrl);
+    expect(independentHydration.ok && independentHydration.value.reference?.metadata.id).toBe(secondReference.metadata.id);
+  });
+
+  it("clears a populated origin while preserving a different origin's page, image, and index membership", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    const firstUrl = new URL("https://first.test/page");
+    const secondUrl = new URL("https://second.test/page");
+    const firstReference = reference({ id: "123e4567-e89b-42d3-a456-426614174020" });
+    const secondReference = reference({ id: "123e4567-e89b-42d3-a456-426614174021", dataUrl: "data:image/png;base64,d29ybGQ=" });
+    expect((await repository.replaceReference({ url: firstUrl, reference: firstReference })).ok).toBe(true);
+    expect((await repository.updatePlacement({ url: firstUrl, placement: { x: 3, y: 4 } })).ok).toBe(true);
+    expect((await repository.replaceReference({ url: secondUrl, reference: secondReference })).ok).toBe(true);
+    expect((await repository.updatePlacement({ url: secondUrl, placement: { x: 7, y: 8 } })).ok).toBe(true);
+
+    const firstOrigin = deriveOrigin(firstUrl);
+    const firstPage = derivePageKey(firstUrl);
+    const secondOrigin = deriveOrigin(secondUrl);
+    const secondPage = derivePageKey(secondUrl);
+    if (firstOrigin === undefined || firstPage === undefined || secondOrigin === undefined || secondPage === undefined) {
+      throw new Error("Known HTTPS URLs must derive storage identities.");
+    }
+    expect(await repository.clearOrigin(firstOrigin)).toEqual({ ok: true, value: undefined });
+    expect(storage.values[pageRecordKey(firstPage)]).toBeUndefined();
+    expect(storage.values[imageRecordKey(firstReference.metadata.id)]).toBeUndefined();
+    expect(storage.values[pageRecordKey(secondPage)]).toBeDefined();
+    expect(storage.values[imageRecordKey(secondReference.metadata.id)]).toBeDefined();
+    expect(await repository.listOrigins()).toEqual({ ok: true, value: [secondOrigin] });
+  });
+
+  it("maps get, read-all, and remove adapter failures to storage-failed", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    storage.failNextGet();
+    expect(await repository.readSnapshot(url)).toEqual({ ok: false, error: expect.objectContaining({ code: "storage-failed" }) });
+
+    storage.failNextReadAll();
+    expect(await repository.listOrigins()).toEqual({ ok: false, error: expect.objectContaining({ code: "storage-failed" }) });
+
+    const imported = reference();
+    expect((await repository.replaceReference({ url, reference: imported })).ok).toBe(true);
+    const origin = deriveOrigin(url);
+    if (origin === undefined) throw new Error("Known HTTPS URL must derive an origin.");
+    storage.failNextRemove();
+    expect(await repository.clearOrigin(origin)).toEqual({ ok: false, error: expect.objectContaining({ code: "storage-failed" }) });
+  });
+
+  it("keeps page placement overrides separate for two pages under one origin", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    const firstPage = new URL("https://example.test/first");
+    const secondPage = new URL("https://example.test/second");
+    expect((await repository.updateSettings({ url: firstPage, patch: { kind: "opacity", opacity: 0.25 } })).ok).toBe(true);
+    expect((await repository.updatePlacement({ url: firstPage, placement: { x: 1, y: 2 } })).ok).toBe(true);
+    expect((await repository.updatePlacement({ url: secondPage, placement: { x: 3, y: 4 } })).ok).toBe(true);
+    const firstSnapshot = await repository.readSnapshot(firstPage);
+    const secondSnapshot = await repository.readSnapshot(secondPage);
+    expect(firstSnapshot.ok && firstSnapshot.value.settings).toMatchObject({ opacity: 0.25, placement: { x: 1, y: 2 } });
+    expect(secondSnapshot.ok && secondSnapshot.value.settings).toMatchObject({ opacity: 0.25, placement: { x: 3, y: 4 } });
   });
 });

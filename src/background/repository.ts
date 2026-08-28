@@ -192,6 +192,8 @@ export class OverlayRepository {
           return before;
         }
 
+        await this.#assertReferenceIdIsUnownedByOtherOrigin(reference.metadata.id, state.origin);
+
         if (existingValue !== undefined) {
           const existingImage = parseImageRecordV1(existingValue);
           if (!existingImage.ok || existingImage.value.referenceId !== reference.metadata.id) {
@@ -377,6 +379,20 @@ export class OverlayRepository {
       if (!parsed.ok) throw new AppError("invalid-stored-data");
       const origins = [...new Set([...parsed.value.origins, origin])].sort();
       await this.#adapter.set({ ...values, [ORIGIN_INDEX_KEY]: { schemaVersion: 1, origins } });
+  }
+
+  async #assertReferenceIdIsUnownedByOtherOrigin(referenceId: ReferenceMetadata["id"], origin: Origin): Promise<void> {
+    const values = await this.#adapter.readAll();
+    for (const [key, value] of Object.entries(values)) {
+      if (!key.startsWith("pixel-pincher:origin:")) continue;
+      const record = parseOriginRecordV1(value);
+      if (!record.ok || key !== originRecordKey(record.value.origin)) {
+        throw new AppError("invalid-stored-data");
+      }
+      if (record.value.origin !== origin && record.value.reference?.id === referenceId) {
+        throw new AppError("storage-failed");
+      }
+    }
   }
 
   #pageKeysForOrigin(values: Readonly<Record<string, unknown>>, origin: Origin): string[] {
