@@ -124,6 +124,25 @@ export class SiteAccessService {
     return this.#exclusive(() => this.#ensureOrigin(origin));
   }
 
+  /** Read current permission and managed-registration state without changing it. */
+  async has(origin: Origin): Promise<Result<boolean, AccessError>> {
+    return this.#exclusive(async () => {
+      try {
+        if (!await this.#adapter.containsOrigin(originMatch(origin))) {
+          return { ok: true, value: false };
+        }
+        const expected = await registrationForOrigin(origin);
+        const registrations = await this.#adapter.getRegistrations();
+        return {
+          ok: true,
+          value: registrations.some((registration) => isExpectedRegistration(registration, expected)),
+        };
+      } catch {
+        return accessFailure("content-unavailable");
+      }
+    });
+  }
+
   async injectForUrl(url: URL, tabId: number): Promise<Result<void, AccessError>> {
     const origin = deriveOrigin(url);
     if (origin === undefined || !Number.isSafeInteger(tabId) || tabId < 0) return accessFailure("content-unavailable");
@@ -218,7 +237,10 @@ export class SiteAccessService {
           // A second worker may have repaired it. Verify the final shape below.
         }
       }
-      if (!await this.#adapter.containsOrigin(originMatch(origin))) return accessFailure("site-access-revoked");
+      if (!await this.#adapter.containsOrigin(originMatch(origin))) {
+        await this.#bestEffortUnregister(expected.id);
+        return accessFailure("site-access-revoked");
+      }
       const final = (await this.#adapter.getRegistrations()).find((registration) => registration.id === expected.id);
       return final !== undefined && isExpectedRegistration(final, expected)
         ? { ok: true, value: undefined }
@@ -233,6 +255,22 @@ export class SiteAccessService {
       return this.#unregisterRegistrationId(await registrationIdForOrigin(origin));
     } catch {
       return accessFailure("content-unavailable");
+    }
+  }
+
+  async #bestEffortUnregister(id: string): Promise<void> {
+    try {
+      const registrations = await this.#adapter.getRegistrations();
+      if (!registrations.some((registration) => registration.id === id)) return;
+      try {
+        await this.#adapter.unregister([id]);
+      } catch {
+        // Permission loss races can make unregister fail. A final read is useful
+        // evidence but must never replace the authoritative revoked result.
+      }
+      await this.#adapter.getRegistrations();
+    } catch {
+      // Permission loss is already the public result; cleanup stays best effort.
     }
   }
 

@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import type { Origin } from "../../src/shared/contracts";
+import { AppError, type Origin } from "../../src/shared/contracts";
 import { OverlayRepository } from "../../src/background/repository";
 import type { StorageAdapter } from "../../src/background/storage-adapter";
 import {
+  createChromeSiteAccessAdapter,
   OVERLAY_REGISTRATION_PREFIX,
   type ObservedRegistration,
   type RuntimeRegistration,
@@ -43,14 +44,21 @@ class FakeSiteAccessAdapter implements SiteAccessAdapter {
   readonly grants = new Set<string>();
   readonly injected: Array<{ files: readonly string[]; tabId: number }> = [];
   readonly registrations: ObservedRegistration[] = [];
+  executeFails = false;
   registerAsDuplicate = false;
+  registerFails = false;
+  revokeOnRegister = false;
+  unregisterAsRace = false;
   unregisterFails = false;
+  unregisterLeavesRegistration = false;
+  updateFails = false;
 
   async containsOrigin(originMatch: string): Promise<boolean> {
     return this.grants.has(originMatch);
   }
 
   async executeScript(tabId: number, files: readonly string[]): Promise<void> {
+    if (this.executeFails) throw new Error("execute failed");
     this.injected.push({ files, tabId });
   }
 
@@ -63,19 +71,23 @@ class FakeSiteAccessAdapter implements SiteAccessAdapter {
   }
 
   async register(registration: RuntimeRegistration): Promise<void> {
+    if (this.registerFails) throw new Error("register failed");
     this.registrations.push(registration);
+    if (this.revokeOnRegister) this.grants.delete(registration.matches[0] ?? "");
     if (this.registerAsDuplicate) throw new Error("duplicate registration");
   }
 
   async unregister(ids: readonly string[]): Promise<void> {
-    if (this.unregisterFails) throw new Error("unregister failed");
+    if (this.unregisterLeavesRegistration) return;
     for (const id of ids) {
       const index = this.registrations.findIndex((registration) => registration.id === id);
       if (index >= 0) this.registrations.splice(index, 1);
     }
+    if (this.unregisterFails || this.unregisterAsRace) throw new Error("unregister failed");
   }
 
   async update(registration: RuntimeRegistration): Promise<void> {
+    if (this.updateFails) throw new Error("update failed");
     await this.unregister([registration.id]);
     await this.register(registration);
   }
@@ -86,6 +98,50 @@ function getOrigin(url: URL) {
   if (origin === undefined) throw new Error("Test URL must have an origin.");
   return origin;
 }
+
+describe("createChromeSiteAccessAdapter", () => {
+  it("uses top-frame-only injection and translates Chrome defaults", async () => {
+    const executeScript = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(globalThis, "chrome", {
+      configurable: true,
+      value: {
+        permissions: {
+          contains: vi.fn().mockResolvedValue(true),
+          getAll: vi.fn().mockResolvedValue({}),
+        },
+        scripting: {
+          executeScript,
+          getRegisteredContentScripts: vi.fn().mockResolvedValue([{
+            id: "other-extension-registration",
+            js: ["other.js"],
+            matches: ["https://other.example/*"],
+          }]),
+          registerContentScripts: vi.fn().mockResolvedValue(undefined),
+          unregisterContentScripts: vi.fn().mockResolvedValue(undefined),
+          updateContentScripts: vi.fn().mockResolvedValue(undefined),
+        },
+      },
+      writable: true,
+    });
+    const adapter = createChromeSiteAccessAdapter();
+
+    await adapter.executeScript(12, ["content-scripts/overlay.js"]);
+    expect(executeScript).toHaveBeenCalledWith({
+      files: ["content-scripts/overlay.js"],
+      target: { frameIds: [0], tabId: 12 },
+    });
+    await expect(adapter.getGrantedOrigins()).resolves.toEqual([]);
+    await expect(adapter.getRegistrations()).resolves.toEqual([expect.objectContaining({
+      allFrames: false,
+      css: [],
+      excludeMatches: [],
+      matchOriginAsFallback: false,
+      persistAcrossSessions: true,
+      runAt: "document_idle",
+      world: "ISOLATED",
+    })]);
+  });
+});
 
 describe("SiteAccessService", () => {
   it("rejects registration without an optional origin grant", async () => {
@@ -131,13 +187,34 @@ describe("SiteAccessService", () => {
     expect(adapter.registrations).toEqual([registration]);
   });
 
-  it("does not create a registration from permission alone", async () => {
+  it("does not create a registration from permission alone or broad permission", async () => {
     const adapter = new FakeSiteAccessAdapter();
     adapter.grants.add("https://example.com/*");
+    adapter.grants.add("https://*/*");
     const service = new SiteAccessService(adapter, new OverlayRepository(new MemoryStorage()));
 
     expect((await service.reconcile()).ok).toBe(true);
     expect(adapter.registrations).toEqual([]);
+  });
+
+  it("leaves unrelated registrations alone and de-duplicates stored origins during reconciliation", async () => {
+    const adapter = new FakeSiteAccessAdapter();
+    const origin = getOrigin(new URL("https://example.com/page"));
+    const unrelated = {
+      ...(await registrationForOrigin(getOrigin(new URL("https://other.example/page")))),
+      id: "other-extension-registration",
+    };
+    adapter.grants.add("https://example.com/*");
+    adapter.registrations.push(unrelated);
+    const repository: Pick<OverlayRepository, "clearOrigin" | "listOrigins"> = {
+      async clearOrigin() { return { ok: true, value: undefined }; },
+      async listOrigins() { return { ok: true, value: [origin, origin] }; },
+    };
+    const service = new SiteAccessService(adapter, repository);
+
+    await expect(service.reconcile()).resolves.toEqual({ ok: true, value: undefined });
+    expect(adapter.registrations).toHaveLength(2);
+    expect(adapter.registrations).toContainEqual(unrelated);
   });
 
   it("uses a deterministic SHA-256 registration ID and full runtime registration shape", async () => {
@@ -172,6 +249,74 @@ describe("SiteAccessService", () => {
     expect(adapter.registrations).toEqual([expected]);
   });
 
+  it("reports current managed state without mutating permission or registrations", async () => {
+    const adapter = new FakeSiteAccessAdapter();
+    const origin = getOrigin(new URL("https://example.com/page"));
+    const service = new SiteAccessService(adapter, new OverlayRepository(new MemoryStorage()));
+
+    await expect(service.has(origin)).resolves.toEqual({ ok: true, value: false });
+    expect(adapter.registrations).toEqual([]);
+
+    adapter.grants.add("https://example.com/*");
+    await expect(service.has(origin)).resolves.toEqual({ ok: true, value: false });
+    expect(adapter.registrations).toEqual([]);
+
+    adapter.registrations.push(await registrationForOrigin(origin));
+    await expect(service.has(origin)).resolves.toEqual({ ok: true, value: true });
+  });
+
+  it("removes a just-registered script when permission is revoked during registration", async () => {
+    const adapter = new FakeSiteAccessAdapter();
+    adapter.grants.add("https://example.com/*");
+    adapter.revokeOnRegister = true;
+    const service = new SiteAccessService(adapter, new OverlayRepository(new MemoryStorage()));
+
+    const result = await service.ensureForUrl(new URL("https://example.com/page"));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("site-access-revoked");
+    expect(adapter.registrations).toEqual([]);
+  });
+
+  it("reports failed registration, update, and injection operations as unavailable", async () => {
+    const adapter = new FakeSiteAccessAdapter();
+    adapter.grants.add("https://example.com/*");
+    adapter.registerFails = true;
+    const service = new SiteAccessService(adapter, new OverlayRepository(new MemoryStorage()));
+
+    const registration = await service.ensureForUrl(new URL("https://example.com/page"));
+    expect(registration.ok).toBe(false);
+    if (!registration.ok) expect(registration.error.code).toBe("content-unavailable");
+
+    adapter.registerFails = false;
+    await service.ensureForUrl(new URL("https://example.com/page"));
+    adapter.registrations[0] = { ...adapter.registrations[0]!, allFrames: true };
+    adapter.updateFails = true;
+    const update = await service.ensureForUrl(new URL("https://example.com/page"));
+    expect(update.ok).toBe(false);
+    if (!update.ok) expect(update.error.code).toBe("content-unavailable");
+    adapter.updateFails = false;
+    await service.ensureForUrl(new URL("https://example.com/page"));
+    adapter.executeFails = true;
+    const injection = await service.injectForUrl(new URL("https://example.com/page"), 7);
+    expect(injection.ok).toBe(false);
+    if (!injection.ok) expect(injection.error.code).toBe("content-unavailable");
+  });
+
+  it("rejects restricted URLs and invalid tab IDs without using Chrome APIs", async () => {
+    const adapter = new FakeSiteAccessAdapter();
+    const service = new SiteAccessService(adapter, new OverlayRepository(new MemoryStorage()));
+
+    await expect(service.ensureForUrl(new URL("chrome://extensions"))).resolves.toEqual({
+      ok: false,
+      error: expect.objectContaining({ code: "content-unavailable" }),
+    });
+    await expect(service.injectForUrl(new URL("https://example.com"), -1)).resolves.toEqual({
+      ok: false,
+      error: expect.objectContaining({ code: "content-unavailable" }),
+    });
+    expect(adapter.injected).toEqual([]);
+  });
+
   it("never repairs or registers while injecting", async () => {
     const adapter = new FakeSiteAccessAdapter();
     const url = new URL("https://example.com/page");
@@ -183,12 +328,30 @@ describe("SiteAccessService", () => {
     expect(adapter.injected).toEqual([]);
   });
 
+  it("treats missing and race-removed registrations as successful unregisters but reports survivors", async () => {
+    const adapter = new FakeSiteAccessAdapter();
+    const origin = getOrigin(new URL("https://example.com/page"));
+    const service = new SiteAccessService(adapter, new OverlayRepository(new MemoryStorage()));
+
+    await expect(service.unregisterOrigin(origin)).resolves.toEqual({ ok: true, value: undefined });
+    adapter.registrations.push(await registrationForOrigin(origin));
+    adapter.unregisterAsRace = true;
+    await expect(service.unregisterOrigin(origin)).resolves.toEqual({ ok: true, value: undefined });
+    adapter.unregisterAsRace = false;
+    adapter.registrations.push(await registrationForOrigin(origin));
+    adapter.unregisterLeavesRegistration = true;
+    const survivor = await service.unregisterOrigin(origin);
+    expect(survivor.ok).toBe(false);
+    if (!survivor.ok) expect(survivor.error.code).toBe("content-unavailable");
+  });
+
   it("continues revoked-site data cleanup when unregister fails", async () => {
     const adapter = new FakeSiteAccessAdapter();
     const origin = getOrigin(new URL("https://example.com/page"));
     const registration = await registrationForOrigin(origin);
     adapter.registrations.push(registration);
     adapter.unregisterFails = true;
+    adapter.unregisterLeavesRegistration = true;
     const cleared: Origin[] = [];
     const repository: Pick<OverlayRepository, "clearOrigin" | "listOrigins"> = {
       async clearOrigin(value) {
@@ -204,6 +367,26 @@ describe("SiteAccessService", () => {
     const result = await service.reconcile();
     expect(result.ok).toBe(false);
     expect(cleared).toEqual([origin]);
+  });
+
+  it("continues clearing later revoked origins after an earlier clear failure", async () => {
+    const adapter = new FakeSiteAccessAdapter();
+    const first = getOrigin(new URL("https://first.example/page"));
+    const second = getOrigin(new URL("https://second.example/page"));
+    const cleared: Origin[] = [];
+    const repository: Pick<OverlayRepository, "clearOrigin" | "listOrigins"> = {
+      async clearOrigin(origin) {
+        cleared.push(origin);
+        return origin === first
+          ? { ok: false as const, error: new AppError("storage-failed") }
+          : { ok: true as const, value: undefined };
+      },
+      async listOrigins() { return { ok: true, value: [first, second] }; },
+    };
+    const service = new SiteAccessService(adapter, repository);
+
+    expect((await service.reconcile()).ok).toBe(false);
+    expect(cleared).toEqual([first, second]);
   });
 
   it("removes malformed and revoked managed registrations", async () => {
