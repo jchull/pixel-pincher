@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { imageRecordKey, ORIGIN_INDEX_KEY, originRecordKey, pageRecordKey } from "../../src/shared/keys";
+import {
+  deriveOrigin,
+  derivePageKey,
+  imageRecordKey,
+  ORIGIN_INDEX_KEY,
+  originRecordKey,
+  pageRecordKey,
+} from "../../src/shared/keys";
 import { parseOrigin, parsePageKey, parseReferenceId } from "../../src/shared/parse";
 
 function parsed<T>(result: { readonly ok: true; readonly value: T } | { readonly ok: false }): T {
@@ -9,6 +16,13 @@ function parsed<T>(result: { readonly ok: true; readonly value: T } | { readonly
 }
 
 describe("storage keys", () => {
+  it("derives canonical HTTP(S) origins and hashless page keys", () => {
+    expect(parsed(deriveOrigin("https://example.com/path#section"))).toBe("https://example.com");
+    expect(parsed(derivePageKey("https://example.com/path?tab=one#section"))).toBe("https://example.com/path?tab=one");
+    expect(deriveOrigin("ftp://example.com/path").ok).toBe(false);
+    expect(derivePageKey("https://example.com/path with spaces").ok).toBe(false);
+  });
+
   it("uses stable prefixes and encodes every variable segment", () => {
     const origin = parsed(parseOrigin("https://example.com:8443"));
     const pageKey = parsed(parsePageKey("https://example.com:8443/path?q=a&x=b"));

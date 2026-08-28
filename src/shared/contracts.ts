@@ -142,11 +142,25 @@ export const MAX_SCALE_PERCENT = 400;
 export const MIN_PLACEMENT = -1_000_000;
 export const MAX_PLACEMENT = 1_000_000;
 
-export const DEFAULT_SETTINGS: OverlaySettings = {
+function deepFreeze<T extends object>(value: T): T {
+  Object.freeze(value);
+  for (const child of Object.values(value)) {
+    if (typeof child === "object" && child !== null && !Object.isFrozen(child)) {
+      deepFreeze(child);
+    }
+  }
+  return value;
+}
+
+export const DEFAULT_ORIGIN_SETTINGS: OriginRecordV1["settings"] = deepFreeze({
   visible: true,
   opacity: 0.5,
   inverted: false,
-  placement: { x: 0, y: 0 },
   sizing: { kind: "fit-width", lastScalePercent: 100 },
   interactionMode: "click-through",
-};
+});
+
+export const DEFAULT_SETTINGS: OverlaySettings = deepFreeze({
+  ...DEFAULT_ORIGIN_SETTINGS,
+  placement: { x: 0, y: 0 },
+});

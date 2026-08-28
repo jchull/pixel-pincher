@@ -1,5 +1,7 @@
 import type { Origin, PageKey, ReferenceId } from "./contracts";
 
+export { deriveOrigin, derivePageKey } from "./parse";
+
 const PREFIX = "pixel-pincher";
 
 export const ORIGIN_INDEX_KEY = `${PREFIX}:origins`;

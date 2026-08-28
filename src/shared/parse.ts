@@ -15,7 +15,9 @@ import {
   type PageRecordV1,
   type Placement,
   type PopupRequest,
+  type PopupResponse,
   type PublicError,
+  type PublicErrorCode,
   type ReferenceId,
   type ReferenceMetadata,
   type Result,
@@ -27,6 +29,7 @@ import {
   MAX_SCALE_PERCENT,
   MIN_PLACEMENT,
   MIN_SCALE_PERCENT,
+  PUBLIC_ERROR_MESSAGES,
   publicError,
 } from "./contracts";
 
@@ -41,6 +44,8 @@ const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$
 
 type UnknownRecord = Record<string, unknown>;
 type ParseErrorCode = "invalid-request" | "invalid-stored-data";
+
+type ValueParser<T> = (value: unknown) => Result<T, PublicError>;
 
 function failure<T>(code: ParseErrorCode): Result<T, PublicError> {
   return { ok: false, error: publicError(code) };
@@ -66,14 +71,16 @@ function readString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function readFiniteInteger(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value)
-    ? value
-    : undefined;
+function readSafeInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) ? value : undefined;
 }
 
 function isMimeType(value: unknown): value is MimeType {
   return typeof value === "string" && MIME_TYPES.has(value);
+}
+
+function isPublicErrorCode(value: string): value is PublicErrorCode {
+  return Object.hasOwn(PUBLIC_ERROR_MESSAGES, value);
 }
 
 function isInteractionMode(value: unknown): value is InteractionMode {
@@ -96,6 +103,20 @@ function brandReferenceId(value: string): ReferenceId {
   return value as ReferenceId;
 }
 
+function sameMetadata(left: ReferenceMetadata, right: ReferenceMetadata): boolean {
+  return left.id === right.id &&
+    left.name === right.name &&
+    left.mimeType === right.mimeType &&
+    left.width === right.width &&
+    left.height === right.height &&
+    left.encodedBytes === right.encodedBytes &&
+    left.importedAt === right.importedAt;
+}
+
+function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
 export function parseSupportedUrl(value: unknown): Result<URL, PublicError> {
   const raw = readString(value);
   if (raw === undefined) return { ok: false, error: publicError("unsupported-url") };
@@ -111,7 +132,7 @@ export function parseSupportedUrl(value: unknown): Result<URL, PublicError> {
   return { ok: true, value: url };
 }
 
-export function parseOrigin(value: unknown): Result<Origin, PublicError> {
+export function deriveOrigin(value: unknown): Result<Origin, PublicError> {
   const raw = readString(value);
   if (raw === undefined) return { ok: false, error: publicError("unsupported-url") };
   let url: URL;
@@ -120,22 +141,35 @@ export function parseOrigin(value: unknown): Result<Origin, PublicError> {
   } catch {
     return { ok: false, error: publicError("unsupported-url") };
   }
-  if (!isSupportedUrl(url) || raw !== url.origin) {
+  if (!isSupportedUrl(url) || (raw !== url.toString() && raw !== url.origin)) {
     return { ok: false, error: publicError("unsupported-url") };
   }
-  return { ok: true, value: brandOrigin(raw) };
+  return { ok: true, value: brandOrigin(url.origin) };
+}
+
+export function derivePageKey(value: unknown): Result<PageKey, PublicError> {
+  const parsed = parseSupportedUrl(value);
+  if (!parsed.ok) return parsed;
+  parsed.value.hash = "";
+  return { ok: true, value: brandPageKey(parsed.value.toString()) };
+}
+
+export function parseOrigin(value: unknown): Result<Origin, PublicError> {
+  const raw = readString(value);
+  const derived = deriveOrigin(value);
+  if (!derived.ok || raw !== derived.value) {
+    return { ok: false, error: publicError("unsupported-url") };
+  }
+  return derived;
 }
 
 export function parsePageKey(value: unknown): Result<PageKey, PublicError> {
-  const parsed = parseSupportedUrl(value);
-  if (!parsed.ok || typeof value !== "string") {
+  const raw = readString(value);
+  const derived = derivePageKey(value);
+  if (!derived.ok || raw !== derived.value) {
     return { ok: false, error: publicError("unsupported-url") };
   }
-  parsed.value.hash = "";
-  if (value !== parsed.value.toString()) {
-    return { ok: false, error: publicError("unsupported-url") };
-  }
-  return { ok: true, value: brandPageKey(value) };
+  return derived;
 }
 
 export function parseReferenceId(value: unknown): Result<ReferenceId, PublicError> {
@@ -146,16 +180,9 @@ export function parseReferenceId(value: unknown): Result<ReferenceId, PublicErro
 
 function parsePlacementValue(value: unknown, code: ParseErrorCode): Result<Placement, PublicError> {
   if (!isOwnDataRecord(value) || !hasExactKeys(value, ["x", "y"])) return failure(code);
-  const x = readFiniteInteger(value.x);
-  const y = readFiniteInteger(value.y);
-  if (
-    x === undefined ||
-    y === undefined ||
-    x < MIN_PLACEMENT ||
-    x > MAX_PLACEMENT ||
-    y < MIN_PLACEMENT ||
-    y > MAX_PLACEMENT
-  ) {
+  const x = readSafeInteger(value.x);
+  const y = readSafeInteger(value.y);
+  if (x === undefined || y === undefined || x < MIN_PLACEMENT || x > MAX_PLACEMENT || y < MIN_PLACEMENT || y > MAX_PLACEMENT) {
     return failure(code);
   }
   return { ok: true, value: { x, y } };
@@ -168,21 +195,13 @@ export function parsePlacement(value: unknown): Result<Placement, PublicError> {
 function parseSizingValue(value: unknown, code: ParseErrorCode): Result<Sizing, PublicError> {
   if (!isOwnDataRecord(value) || typeof value.kind !== "string") return failure(code);
   if (value.kind === "fit-width") {
-    if (!hasExactKeys(value, ["kind", "lastScalePercent"])) return failure(code);
-    const lastScalePercent = readFiniteInteger(value.lastScalePercent);
-    if (
-      lastScalePercent === undefined ||
-      lastScalePercent < MIN_SCALE_PERCENT ||
-      lastScalePercent > MAX_SCALE_PERCENT
-    ) return failure(code);
+    const lastScalePercent = readSafeInteger(value.lastScalePercent);
+    if (!hasExactKeys(value, ["kind", "lastScalePercent"]) || lastScalePercent === undefined || lastScalePercent < MIN_SCALE_PERCENT || lastScalePercent > MAX_SCALE_PERCENT) return failure(code);
     return { ok: true, value: { kind: "fit-width", lastScalePercent } };
   }
   if (value.kind === "scale") {
-    if (!hasExactKeys(value, ["kind", "percent"])) return failure(code);
-    const percent = readFiniteInteger(value.percent);
-    if (percent === undefined || percent < MIN_SCALE_PERCENT || percent > MAX_SCALE_PERCENT) {
-      return failure(code);
-    }
+    const percent = readSafeInteger(value.percent);
+    if (!hasExactKeys(value, ["kind", "percent"]) || percent === undefined || percent < MIN_SCALE_PERCENT || percent > MAX_SCALE_PERCENT) return failure(code);
     return { ok: true, value: { kind: "scale", percent } };
   }
   return failure(code);
@@ -193,34 +212,11 @@ export function parseSizing(value: unknown): Result<Sizing, PublicError> {
 }
 
 function parseSettingsValue(value: unknown, code: ParseErrorCode): Result<OverlaySettings, PublicError> {
-  if (!isOwnDataRecord(value) || !hasExactKeys(value, ["visible", "opacity", "inverted", "placement", "sizing", "interactionMode"])) {
-    return failure(code);
-  }
+  if (!isOwnDataRecord(value) || !hasExactKeys(value, ["visible", "opacity", "inverted", "placement", "sizing", "interactionMode"])) return failure(code);
   const placement = parsePlacementValue(value.placement, code);
   const sizing = parseSizingValue(value.sizing, code);
-  const interactionMode = value.interactionMode;
-  if (
-    typeof value.visible !== "boolean" ||
-    typeof value.opacity !== "number" ||
-    !Number.isFinite(value.opacity) ||
-    value.opacity < 0 ||
-    value.opacity > 1 ||
-    typeof value.inverted !== "boolean" ||
-    !isInteractionMode(interactionMode) ||
-    !placement.ok ||
-    !sizing.ok
-  ) return failure(code);
-  return {
-    ok: true,
-    value: {
-      visible: value.visible,
-      opacity: value.opacity,
-      inverted: value.inverted,
-      placement: placement.value,
-      sizing: sizing.value,
-      interactionMode,
-    },
-  };
+  if (typeof value.visible !== "boolean" || typeof value.opacity !== "number" || !Number.isFinite(value.opacity) || value.opacity < 0 || value.opacity > 1 || typeof value.inverted !== "boolean" || !isInteractionMode(value.interactionMode) || !placement.ok || !sizing.ok) return failure(code);
+  return { ok: true, value: { visible: value.visible, opacity: value.opacity, inverted: value.inverted, placement: placement.value, sizing: sizing.value, interactionMode: value.interactionMode } };
 }
 
 export function parseOverlaySettings(value: unknown): Result<OverlaySettings, PublicError> {
@@ -231,50 +227,38 @@ function parseMetadataValue(value: unknown, code: ParseErrorCode): Result<Refere
   if (!isOwnDataRecord(value) || !hasExactKeys(value, ["id", "name", "mimeType", "width", "height", "encodedBytes", "importedAt"])) return failure(code);
   const id = parseReferenceId(value.id);
   const name = readString(value.name);
-  const mimeType = value.mimeType;
-  const width = readFiniteInteger(value.width);
-  const height = readFiniteInteger(value.height);
-  const encodedBytes = readFiniteInteger(value.encodedBytes);
-  const importedAt = readFiniteInteger(value.importedAt);
-  if (
-    !id.ok ||
-    name === undefined ||
-    name.length === 0 ||
-    !isMimeType(mimeType) ||
-    width === undefined ||
-    height === undefined ||
-    width <= 0 ||
-    height <= 0 ||
-    width * height > MAX_IMAGE_PIXELS ||
-    encodedBytes === undefined ||
-    encodedBytes < 0 ||
-    encodedBytes > MAX_IMAGE_ENCODED_BYTES ||
-    importedAt === undefined ||
-    importedAt < 0
-  ) return failure(code);
-  return { ok: true, value: { id: id.value, name, mimeType, width, height, encodedBytes, importedAt } };
+  const width = readSafeInteger(value.width);
+  const height = readSafeInteger(value.height);
+  const encodedBytes = readSafeInteger(value.encodedBytes);
+  const importedAt = readSafeInteger(value.importedAt);
+  if (!id.ok || name === undefined || name.length === 0 || !isMimeType(value.mimeType) || width === undefined || height === undefined || width <= 0 || height <= 0 || width * height > MAX_IMAGE_PIXELS || encodedBytes === undefined || encodedBytes <= 0 || encodedBytes > MAX_IMAGE_ENCODED_BYTES || importedAt === undefined || importedAt < 0) return failure(code);
+  return { ok: true, value: { id: id.value, name, mimeType: value.mimeType, width, height, encodedBytes, importedAt } };
 }
 
 export function parseReferenceMetadata(value: unknown): Result<ReferenceMetadata, PublicError> {
   return parseMetadataValue(value, "invalid-request");
 }
 
-function decodedBase64Bytes(payload: string): number | undefined {
-  if (!BASE64.test(payload)) return undefined;
-  const padding = payload.endsWith("==") ? 2 : payload.endsWith("=") ? 1 : 0;
-  return (payload.length / 4) * 3 - padding;
+function parseDataUrl(value: unknown, code: ParseErrorCode, expectedMimeType?: MimeType, expectedBytes?: number): Result<string, PublicError> {
+  const dataUrl = readString(value);
+  if (dataUrl === undefined || utf8ByteLength(dataUrl) > MAX_IMAGE_ENCODED_BYTES) return failure(code);
+  const match = /^data:(image\/png|image\/jpeg|image\/webp|image\/svg\+xml);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+  if (match === null) return failure(code);
+  const mimeType = match[1];
+  const payload = match[2];
+  if (!isMimeType(mimeType) || (expectedMimeType !== undefined && mimeType !== expectedMimeType) || !BASE64.test(payload)) return failure(code);
+  const encodedBytes = utf8ByteLength(dataUrl);
+  if (expectedBytes !== undefined && encodedBytes !== expectedBytes) return failure(code);
+  return { ok: true, value: dataUrl };
 }
 
 function parseImportedReferenceValue(value: unknown, code: ParseErrorCode): Result<ImportedReference, PublicError> {
   if (!isOwnDataRecord(value) || !hasExactKeys(value, ["metadata", "dataUrl"])) return failure(code);
   const metadata = parseMetadataValue(value.metadata, code);
-  const dataUrl = readString(value.dataUrl);
-  if (!metadata.ok || dataUrl === undefined) return failure(code);
-  const prefix = `data:${metadata.value.mimeType};base64,`;
-  if (!dataUrl.startsWith(prefix)) return failure(code);
-  const encodedBytes = decodedBase64Bytes(dataUrl.slice(prefix.length));
-  if (encodedBytes === undefined || encodedBytes !== metadata.value.encodedBytes || encodedBytes > MAX_IMAGE_ENCODED_BYTES) return failure(code);
-  return { ok: true, value: { metadata: metadata.value, dataUrl } };
+  if (!metadata.ok) return metadata;
+  const dataUrl = parseDataUrl(value.dataUrl, code, metadata.value.mimeType, metadata.value.encodedBytes);
+  if (!dataUrl.ok) return dataUrl;
+  return { ok: true, value: { metadata: metadata.value, dataUrl: dataUrl.value } };
 }
 
 export function parseImportedReference(value: unknown): Result<ImportedReference, PublicError> {
@@ -283,13 +267,12 @@ export function parseImportedReference(value: unknown): Result<ImportedReference
 
 function parseSnapshotValue(value: unknown, code: ParseErrorCode): Result<OverlaySnapshot, PublicError> {
   if (!isOwnDataRecord(value) || !hasExactKeys(value, ["revision", "origin", "pageKey", "settings", "reference"])) return failure(code);
-  const revision = readFiniteInteger(value.revision);
+  const revision = readSafeInteger(value.revision);
   const origin = parseOrigin(value.origin);
   const pageKey = parsePageKey(value.pageKey);
   const settings = parseSettingsValue(value.settings, code);
   const reference = value.reference === null ? { ok: true as const, value: null } : parseMetadataValue(value.reference, code);
-  if (!origin.ok || !pageKey.ok || !settings.ok || !reference.ok || revision === undefined || revision < 0) return failure(code);
-  if (!pageKey.value.startsWith(`${origin.value}/`)) return failure(code);
+  if (revision === undefined || revision < 0 || !origin.ok || !pageKey.ok || !settings.ok || !reference.ok || !pageKey.value.startsWith(`${origin.value}/`)) return failure(code);
   return { ok: true, value: { revision, origin: origin.value, pageKey: pageKey.value, settings: settings.value, reference: reference.value } };
 }
 
@@ -306,40 +289,46 @@ export function parseHydration(value: unknown): Result<Hydration, PublicError> {
     return { ok: true, value: { snapshot: { ...snapshot.value, reference: null }, reference: null } };
   }
   const reference = parseImportedReferenceValue(value.reference, "invalid-request");
-  if (!reference.ok || reference.value.metadata.id !== snapshot.value.reference.id) return failure("invalid-request");
+  if (!reference.ok || !sameMetadata(snapshot.value.reference, reference.value.metadata)) return failure("invalid-request");
   return { ok: true, value: { snapshot: { ...snapshot.value, reference: snapshot.value.reference }, reference: reference.value } };
 }
 
 export function parseSettingsPatch(value: unknown): Result<SettingsPatch, PublicError> {
   if (!isOwnDataRecord(value) || typeof value.kind !== "string") return failure("invalid-request");
   switch (value.kind) {
-    case "visibility":
-      return hasExactKeys(value, ["kind", "visible"]) && typeof value.visible === "boolean"
-        ? { ok: true, value: { kind: "visibility", visible: value.visible } }
-        : failure("invalid-request");
-    case "opacity":
-      return hasExactKeys(value, ["kind", "opacity"]) && typeof value.opacity === "number" && Number.isFinite(value.opacity) && value.opacity >= 0 && value.opacity <= 1
-        ? { ok: true, value: { kind: "opacity", opacity: value.opacity } }
-        : failure("invalid-request");
-    case "inversion":
-      return hasExactKeys(value, ["kind", "inverted"]) && typeof value.inverted === "boolean"
-        ? { ok: true, value: { kind: "inversion", inverted: value.inverted } }
-        : failure("invalid-request");
+    case "visibility": return hasExactKeys(value, ["kind", "visible"]) && typeof value.visible === "boolean" ? { ok: true, value: { kind: "visibility", visible: value.visible } } : failure("invalid-request");
+    case "opacity": return hasExactKeys(value, ["kind", "opacity"]) && typeof value.opacity === "number" && Number.isFinite(value.opacity) && value.opacity >= 0 && value.opacity <= 1 ? { ok: true, value: { kind: "opacity", opacity: value.opacity } } : failure("invalid-request");
+    case "inversion": return hasExactKeys(value, ["kind", "inverted"]) && typeof value.inverted === "boolean" ? { ok: true, value: { kind: "inversion", inverted: value.inverted } } : failure("invalid-request");
     case "sizing": {
       const sizing = parseSizingValue(value.sizing, "invalid-request");
       return hasExactKeys(value, ["kind", "sizing"]) && sizing.ok ? { ok: true, value: { kind: "sizing", sizing: sizing.value } } : failure("invalid-request");
     }
-    case "interaction-mode":
-      return hasExactKeys(value, ["kind", "interactionMode"]) && (value.interactionMode === "click-through" || value.interactionMode === "drag")
-        ? { ok: true, value: { kind: "interaction-mode", interactionMode: value.interactionMode } }
-        : failure("invalid-request");
+    case "interaction-mode": return hasExactKeys(value, ["kind", "interactionMode"]) && isInteractionMode(value.interactionMode) ? { ok: true, value: { kind: "interaction-mode", interactionMode: value.interactionMode } } : failure("invalid-request");
     case "placement": {
       const placement = parsePlacementValue(value.placement, "invalid-request");
       return hasExactKeys(value, ["kind", "placement"]) && placement.ok ? { ok: true, value: { kind: "placement", placement: placement.value } } : failure("invalid-request");
     }
-    default:
-      return failure("invalid-request");
+    default: return failure("invalid-request");
   }
+}
+
+export function parsePublicError(value: unknown): Result<PublicError, PublicError> {
+  if (!isOwnDataRecord(value) || !hasExactKeys(value, ["code", "message"]) || typeof value.code !== "string" || typeof value.message !== "string" || !isPublicErrorCode(value.code)) return failure("invalid-request");
+  const code = value.code;
+  if (value.message !== PUBLIC_ERROR_MESSAGES[code]) return failure("invalid-request");
+  return { ok: true, value: publicError(code) };
+}
+
+export function parsePopupResponse<T>(value: unknown, parseValue: ValueParser<T>): Result<PopupResponse<T>, PublicError> {
+  if (!isOwnDataRecord(value) || typeof value.requestId !== "string" || value.requestId.length === 0 || typeof value.ok !== "boolean") return failure("invalid-request");
+  if (value.ok) {
+    const parsedValue = parseValue(value.value);
+    if (!hasExactKeys(value, ["requestId", "ok", "value"]) || !parsedValue.ok) return failure("invalid-request");
+    return { ok: true, value: { requestId: value.requestId, ok: true, value: parsedValue.value } };
+  }
+  const error = parsePublicError(value.error);
+  if (!hasExactKeys(value, ["requestId", "ok", "error"]) || !error.ok) return failure("invalid-request");
+  return { ok: true, value: { requestId: value.requestId, ok: false, error: error.value } };
 }
 
 export function parsePopupRequest(value: unknown): Result<PopupRequest, PublicError> {
@@ -364,9 +353,18 @@ export function parsePopupRequest(value: unknown): Result<PopupRequest, PublicEr
 export function parseContentRequest(value: unknown): Result<ContentRequest, PublicError> {
   if (!isOwnDataRecord(value) || typeof value.kind !== "string") return failure("invalid-request");
   switch (value.kind) {
-    case "hydrate-overlay": { const hydration = parseHydration(value.hydration); return hasExactKeys(value, ["kind", "hydration"]) && hydration.ok ? { ok: true, value: { kind: "hydrate-overlay", hydration: hydration.value } } : failure("invalid-request"); }
-    case "apply-settings": { const snapshot = parseOverlaySnapshot(value.snapshot); return hasExactKeys(value, ["kind", "snapshot"]) && snapshot.ok ? { ok: true, value: { kind: "apply-settings", snapshot: snapshot.value } } : failure("invalid-request"); }
-    case "clear-overlay": { const revision = readFiniteInteger(value.revision); return hasExactKeys(value, ["kind", "revision"]) && revision !== undefined && revision >= 0 ? { ok: true, value: { kind: "clear-overlay", revision } } : failure("invalid-request"); }
+    case "hydrate-overlay": {
+      const hydration = parseHydration(value.hydration);
+      return hasExactKeys(value, ["kind", "hydration"]) && hydration.ok ? { ok: true, value: { kind: "hydrate-overlay", hydration: hydration.value } } : failure("invalid-request");
+    }
+    case "apply-settings": {
+      const snapshot = parseOverlaySnapshot(value.snapshot);
+      return hasExactKeys(value, ["kind", "snapshot"]) && snapshot.ok ? { ok: true, value: { kind: "apply-settings", snapshot: snapshot.value } } : failure("invalid-request");
+    }
+    case "clear-overlay": {
+      const revision = readSafeInteger(value.revision);
+      return hasExactKeys(value, ["kind", "revision"]) && revision !== undefined && revision >= 0 ? { ok: true, value: { kind: "clear-overlay", revision } } : failure("invalid-request");
+    }
     default: return failure("invalid-request");
   }
 }
@@ -376,47 +374,54 @@ export function parseContentEvent(value: unknown): Result<ContentEvent, PublicEr
   const url = value.url === undefined ? undefined : parseSupportedUrl(value.url);
   switch (value.kind) {
     case "content-ready": return hasExactKeys(value, ["kind", "url"]) && url?.ok ? { ok: true, value: { kind: "content-ready", url: url.value.toString() } } : failure("invalid-request");
-    case "placement-committed": { const placement = parsePlacement(value.placement); return hasExactKeys(value, ["kind", "url", "placement"]) && url?.ok && placement.ok ? { ok: true, value: { kind: "placement-committed", url: url.value.toString(), placement: placement.value } } : failure("invalid-request"); }
-    case "image-load-failed": { const referenceId = parseReferenceId(value.referenceId); return hasExactKeys(value, ["kind", "url", "referenceId"]) && url?.ok && referenceId.ok ? { ok: true, value: { kind: "image-load-failed", url: url.value.toString(), referenceId: referenceId.value } } : failure("invalid-request"); }
+    case "placement-committed": {
+      const placement = parsePlacement(value.placement);
+      return hasExactKeys(value, ["kind", "url", "placement"]) && url?.ok && placement.ok ? { ok: true, value: { kind: "placement-committed", url: url.value.toString(), placement: placement.value } } : failure("invalid-request");
+    }
+    case "image-load-failed": {
+      const referenceId = parseReferenceId(value.referenceId);
+      return hasExactKeys(value, ["kind", "url", "referenceId"]) && url?.ok && referenceId.ok ? { ok: true, value: { kind: "image-load-failed", url: url.value.toString(), referenceId: referenceId.value } } : failure("invalid-request");
+    }
     default: return failure("invalid-request");
   }
 }
 
 export function parseOriginRecordV1(value: unknown): Result<OriginRecordV1, PublicError> {
   if (!isOwnDataRecord(value) || !hasExactKeys(value, ["schemaVersion", "revision", "origin", "settings", "reference"]) || value.schemaVersion !== 1) return failure("invalid-stored-data");
-  const revision = readFiniteInteger(value.revision);
+  const revision = readSafeInteger(value.revision);
   const origin = parseOrigin(value.origin);
   if (!isOwnDataRecord(value.settings) || !hasExactKeys(value.settings, ["visible", "opacity", "inverted", "sizing", "interactionMode"])) return failure("invalid-stored-data");
   const settings = parseSettingsValue({ ...value.settings, placement: { x: 0, y: 0 } }, "invalid-stored-data");
   const reference = value.reference === null ? { ok: true as const, value: null } : parseMetadataValue(value.reference, "invalid-stored-data");
   if (revision === undefined || revision < 0 || !origin.ok || !settings.ok || !reference.ok) return failure("invalid-stored-data");
-  const originSettings = {
-    visible: settings.value.visible,
-    opacity: settings.value.opacity,
-    inverted: settings.value.inverted,
-    sizing: settings.value.sizing,
-    interactionMode: settings.value.interactionMode,
-  };
-  return { ok: true, value: { schemaVersion: 1, revision, origin: origin.value, settings: originSettings, reference: reference.value } };
+  return { ok: true, value: { schemaVersion: 1, revision, origin: origin.value, settings: { visible: settings.value.visible, opacity: settings.value.opacity, inverted: settings.value.inverted, sizing: settings.value.sizing, interactionMode: settings.value.interactionMode }, reference: reference.value } };
 }
 
 export function parsePageRecordV1(value: unknown): Result<PageRecordV1, PublicError> {
   if (!isOwnDataRecord(value) || !hasExactKeys(value, ["schemaVersion", "revision", "origin", "pageKey", "placement"]) || value.schemaVersion !== 1) return failure("invalid-stored-data");
-  const revision = readFiniteInteger(value.revision); const origin = parseOrigin(value.origin); const pageKey = parsePageKey(value.pageKey); const placement = parsePlacementValue(value.placement, "invalid-stored-data");
+  const revision = readSafeInteger(value.revision);
+  const origin = parseOrigin(value.origin);
+  const pageKey = parsePageKey(value.pageKey);
+  const placement = parsePlacementValue(value.placement, "invalid-stored-data");
   if (revision === undefined || revision < 0 || !origin.ok || !pageKey.ok || !placement.ok || !pageKey.value.startsWith(`${origin.value}/`)) return failure("invalid-stored-data");
   return { ok: true, value: { schemaVersion: 1, revision, origin: origin.value, pageKey: pageKey.value, placement: placement.value } };
 }
 
 export function parseImageRecordV1(value: unknown): Result<ImageRecordV1, PublicError> {
   if (!isOwnDataRecord(value) || !hasExactKeys(value, ["schemaVersion", "referenceId", "dataUrl"]) || value.schemaVersion !== 1) return failure("invalid-stored-data");
-  const referenceId = parseReferenceId(value.referenceId); const dataUrl = readString(value.dataUrl);
-  if (!referenceId.ok || dataUrl === undefined || !dataUrl.startsWith("data:")) return failure("invalid-stored-data");
-  return { ok: true, value: { schemaVersion: 1, referenceId: referenceId.value, dataUrl } };
+  const referenceId = parseReferenceId(value.referenceId);
+  const dataUrl = parseDataUrl(value.dataUrl, "invalid-stored-data");
+  if (!referenceId.ok || !dataUrl.ok) return failure("invalid-stored-data");
+  return { ok: true, value: { schemaVersion: 1, referenceId: referenceId.value, dataUrl: dataUrl.value } };
 }
 
 export function parseOriginIndexV1(value: unknown): Result<OriginIndexV1, PublicError> {
   if (!isOwnDataRecord(value) || !hasExactKeys(value, ["schemaVersion", "origins"]) || value.schemaVersion !== 1 || !Array.isArray(value.origins)) return failure("invalid-stored-data");
   const origins: Origin[] = [];
-  for (const originValue of value.origins) { const origin = parseOrigin(originValue); if (!origin.ok || origins.includes(origin.value)) return failure("invalid-stored-data"); origins.push(origin.value); }
+  for (const originValue of value.origins) {
+    const origin = parseOrigin(originValue);
+    if (!origin.ok || origins.includes(origin.value)) return failure("invalid-stored-data");
+    origins.push(origin.value);
+  }
   return { ok: true, value: { schemaVersion: 1, origins } };
 }

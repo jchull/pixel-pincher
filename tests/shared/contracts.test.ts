@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_ORIGIN_SETTINGS,
   DEFAULT_SETTINGS,
   MAX_IMAGE_ENCODED_BYTES,
   MAX_IMAGE_PIXELS,
@@ -18,6 +19,16 @@ describe("shared contracts", () => {
       sizing: { kind: "fit-width", lastScalePercent: 100 },
       interactionMode: "click-through",
     });
+    expect(DEFAULT_ORIGIN_SETTINGS).toEqual({
+      visible: true,
+      opacity: 0.5,
+      inverted: false,
+      sizing: { kind: "fit-width", lastScalePercent: 100 },
+      interactionMode: "click-through",
+    });
+    expect(Object.isFrozen(DEFAULT_SETTINGS)).toBe(true);
+    expect(Object.isFrozen(DEFAULT_SETTINGS.placement)).toBe(true);
+    expect(Object.isFrozen(DEFAULT_ORIGIN_SETTINGS.sizing)).toBe(true);
     expect(MAX_IMAGE_ENCODED_BYTES).toBe(8 * 1024 * 1024);
     expect(MAX_IMAGE_PIXELS).toBe(40_000_000);
   });
