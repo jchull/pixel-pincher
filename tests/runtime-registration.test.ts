@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   createRuntimeProofRegistration,
   getExactOriginMatchPattern,
+  isRuntimeProofRegistrationForOrigin,
   isRuntimeProofRequest,
   RUNTIME_PROOF_SCRIPT_ID,
   RUNTIME_PROOF_SCRIPT_PATH,
@@ -29,6 +30,26 @@ describe("runtime proof registration", () => {
       persistAcrossSessions: true,
       runAt: "document_idle",
     });
+  });
+
+  it("identifies only a matching registered runtime proof", () => {
+    const registration = createRuntimeProofRegistration("https://example.com/*");
+
+    expect(
+      isRuntimeProofRegistrationForOrigin(registration, "https://example.com/*"),
+    ).toBe(true);
+    expect(
+      isRuntimeProofRegistrationForOrigin(registration, "https://other.example/*"),
+    ).toBe(false);
+    expect(
+      isRuntimeProofRegistrationForOrigin(
+        { ...registration, js: ["content-scripts/other.js"] },
+        "https://example.com/*",
+      ),
+    ).toBe(false);
+    expect(isRuntimeProofRegistrationForOrigin(null, "https://example.com/*")).toBe(
+      false,
+    );
   });
 
   it("accepts only valid runtime-proof message boundaries", () => {

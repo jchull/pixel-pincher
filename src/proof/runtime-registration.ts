@@ -47,6 +47,27 @@ export function getExactOriginMatchPattern(url: string): string | undefined {
   return `${parsedUrl.origin}/*`;
 }
 
+export function isRuntimeProofRegistrationForOrigin(
+  value: unknown,
+  origin: string,
+): boolean {
+  if (!isExactOriginMatchPattern(origin) || typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const id = Object.getOwnPropertyDescriptor(value, "id")?.value;
+  const js = Object.getOwnPropertyDescriptor(value, "js")?.value;
+  const matches = Object.getOwnPropertyDescriptor(value, "matches")?.value;
+
+  return (
+    id === RUNTIME_PROOF_SCRIPT_ID &&
+    isStringArray(js) &&
+    js.includes(RUNTIME_PROOF_SCRIPT_PATH) &&
+    isStringArray(matches) &&
+    matches.includes(origin)
+  );
+}
+
 export function isRuntimeProofRequest(value: unknown): value is RuntimeProofRequest {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -64,6 +85,10 @@ export function isRuntimeProofRequest(value: unknown): value is RuntimeProofRequ
     Number.isInteger(tabId) &&
     tabId >= 0
   );
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
 function isExactOriginMatchPattern(value: string): boolean {
