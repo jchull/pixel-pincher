@@ -156,6 +156,18 @@ export type InvalidStoredDataError = ErrorFor<"invalid-stored-data">;
 export type StorageFailedError = ErrorFor<"storage-failed">;
 export type ImageRenderFailedError = ErrorFor<"image-render-failed">;
 
+export type ValidationError = ErrorFor<"unsupported-url" | "invalid-request">;
+export type RepositoryError = ErrorFor<"invalid-stored-data" | "storage-failed">;
+export type AccessError = ErrorFor<"site-access-denied" | "site-access-revoked">;
+export type DeliveryError = ErrorFor<"content-unavailable">;
+export type ImportError = ErrorFor<
+  | "invalid-image-type"
+  | "image-too-large"
+  | "image-too-many-pixels"
+  | "image-decode-failed"
+>;
+export type RenderError = ErrorFor<"image-render-failed">;
+
 export function publicError(code: PublicErrorCode): PublicError {
   return { code, message: PUBLIC_ERROR_MESSAGES[code] };
 }

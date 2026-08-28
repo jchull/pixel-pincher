@@ -9,6 +9,12 @@ import {
   PUBLIC_ERROR_MESSAGES,
   publicError,
   toPublicError,
+  type AccessError,
+  type DeliveryError,
+  type ImportError,
+  type RenderError,
+  type RepositoryError,
+  type ValidationError,
 } from "../../src/shared/contracts";
 
 describe("shared contracts", () => {
@@ -47,6 +53,26 @@ describe("shared contracts", () => {
       expect(error.code).toBe(code);
       expect(error.message).toBe(PUBLIC_ERROR_MESSAGES[error.code]);
     }
+  });
+
+  it("assigns AppErrors to the documented error categories", () => {
+    const errors = {
+      validation: new AppError("invalid-request") satisfies ValidationError,
+      repository: new AppError("storage-failed") satisfies RepositoryError,
+      access: new AppError("site-access-denied") satisfies AccessError,
+      delivery: new AppError("content-unavailable") satisfies DeliveryError,
+      import: new AppError("image-too-large") satisfies ImportError,
+      render: new AppError("image-render-failed") satisfies RenderError,
+    };
+
+    expect(Object.values(errors).map((error) => error.code)).toEqual([
+      "invalid-request",
+      "storage-failed",
+      "site-access-denied",
+      "content-unavailable",
+      "image-too-large",
+      "image-render-failed",
+    ]);
   });
 
   it("strips internal causes from every AppError category", () => {
