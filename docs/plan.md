@@ -331,7 +331,7 @@ The background listens to `chrome.permissions.onRemoved`. For each removed origi
 
 The controller creates one custom host element with a Shadow DOM and an image element. The host uses a z-index of `2147483647`, `position: fixed`, zero layout dimensions, and `pointer-events: none` by default.
 
-Before implementation, Task 0 must prove that an image data URL created by the extension renders inside the Shadow DOM on a page with restrictive `img-src`. If page CSP blocks it, use a canvas decoded with `createImageBitmap` inside the content script. Do not proceed with a renderer that fails the CSP fixture.
+Task 0 proved on 2026-08-28 (see `docs/decisions/runtime-injection.md`) that an image data URL created by the extension renders inside the Shadow DOM on a page with restrictive `img-src 'self'`. The image renderer is the chosen path. Keep the `createImageBitmap` canvas fallback documented here only as the response to a future CSP change that blocks data URLs.
 
 Rendering rules:
 
@@ -384,6 +384,14 @@ The enabled state contains:
 The popup width must not exceed 360 CSS pixels. Every input has a visible label. All actions work with a keyboard. Focus returns to the triggering control after a request unless rendering removes that control. Errors remain until the next user action.
 
 X, Y, and scale numeric inputs commit on Enter or blur. Placement arrow keys change by one pixel, and Shift plus an arrow key changes by ten pixels. Scale arrow keys change by 1%, and Shift plus an arrow key changes by 10%. Choosing fit width preserves the last manual scale so turning fit width off restores it. Disabled controls remain readable but cannot dispatch requests when no reference exists.
+
+## Task 0 proven details
+
+Recorded 2026-08-28 after manual Chrome verification; the full dated results are in `docs/decisions/runtime-injection.md`. The proof-only code was deleted in the Task 0 completion commit. These details bind Tasks 3 and 6.
+
+- **Content entry:** a WXT content entrypoint with `registration: "runtime"` and no static `matches` field. WXT 0.20 emits it at `content-scripts/<entry-name>.js` and adds no manifest `content_scripts` entry or required host permissions.
+- **Registration:** after the popup's direct permission grant, the background can register the generated asset for the exact match `<origin>/*` with `allFrames: false`, `runAt: "document_idle"`, and `persistAcrossSessions: true`. Registration persists across a browser restart, and `chrome.scripting.executeScript` injects it into an already-open tab after a grant. Task 3 uses one deterministic registration ID per origin.
+- **Renderer:** an `img` element with a data URL source inside the Shadow DOM renders under the restrictive `img-src 'self'` CSP fixture. Task 6 uses the image renderer; the canvas fallback is not required.
 
 ## Definition of done for every task
 
