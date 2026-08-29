@@ -116,7 +116,7 @@ export class ControlPanel {
     e.opacity.addEventListener("input", this.#handleOpacity);
     e.fitWidth.addEventListener("change", this.#handleFitWidth);
     e.scale.addEventListener("input", this.#handleScale);
-    e.scaleNumber.addEventListener("blur", this.#handleScaleNumber);
+    e.scaleNumber.addEventListener("input", this.#handleScaleNumber);
     e.scaleNumber.addEventListener("keydown", this.#handleNumberKey);
     e.inverted.addEventListener("change", this.#handleInversion);
     e.clickThrough.addEventListener("change", this.#handleInteraction);
@@ -283,19 +283,28 @@ export class ControlPanel {
       true,
     );
   };
-  #handleScale = (): void =>
+  #handleScale = (): void => {
+    const percent = clampScale(Number(this.#elements.scale.value));
+    this.#elements.scaleNumber.value = String(percent);
     this.#queueSetting(
-      {
-        kind: "sizing",
-        sizing: {
-          kind: "scale",
-          percent: clampScale(Number(this.#elements.scale.value)),
-        },
-      },
+      { kind: "sizing", sizing: { kind: "scale", percent } },
       true,
     );
-  #handleScaleNumber = (): void =>
-    this.#commitNumber(this.#elements.scaleNumber);
+  };
+  #handleScaleNumber = (): void => {
+    const percent = Number(this.#elements.scaleNumber.value);
+    if (
+      !Number.isSafeInteger(percent) ||
+      percent < MIN_SCALE_PERCENT ||
+      percent > MAX_SCALE_PERCENT
+    )
+      return;
+    this.#elements.scale.value = String(percent);
+    this.#queueSetting(
+      { kind: "sizing", sizing: { kind: "scale", percent } },
+      true,
+    );
+  };
   #handleInversion = (): void =>
     this.#queueSetting({
       kind: "inversion",
@@ -341,11 +350,11 @@ export class ControlPanel {
       return;
     }
     if (input === this.#elements.scaleNumber) {
+      const percent = clampScale(value);
+      this.#elements.scale.value = String(percent);
+      this.#elements.scaleNumber.value = String(percent);
       this.#queueSetting(
-        {
-          kind: "sizing",
-          sizing: { kind: "scale", percent: clampScale(value) },
-        },
+        { kind: "sizing", sizing: { kind: "scale", percent } },
         true,
       );
       return;
@@ -599,12 +608,6 @@ function findOrCreatePanel(
     MIN_SCALE_PERCENT,
     MAX_SCALE_PERCENT,
   );
-  const reset = button(document, "reset-scale", "Reset scale to 100%");
-  reset.addEventListener("click", () => {
-    scale.value = "100";
-    scaleNumber.value = "100";
-    scale.dispatchEvent(new Event("input"));
-  });
   const inverted = checkbox(document, "inverted", "Invert colors");
   const clickThrough = radio(
     document,
@@ -623,14 +626,12 @@ function findOrCreatePanel(
   const x = number(document, "x", MIN_PLACEMENT, MAX_PLACEMENT);
   const y = number(document, "y", MIN_PLACEMENT, MAX_PLACEMENT);
   appendLabeled(controls, "Opacity", opacity, opacityOutput);
-  appendLabeled(controls, "Scale", scale);
-  appendLabeled(controls, "Manual scale", scaleNumber);
+  appendScaleControl(controls, scale, scaleNumber);
   appendLabeled(controls, "X position", x);
   appendLabeled(controls, "Y position", y);
   controls.append(
     visible.parentElement!,
     fitWidth.parentElement!,
-    reset,
     inverted.parentElement!,
     clickThrough.parentElement!,
     drag.parentElement!,
@@ -745,6 +746,20 @@ function appendLabeled(
   if (extra !== undefined) wrapper.append(extra);
   parent.append(wrapper);
 }
+function appendScaleControl(
+  parent: HTMLElement,
+  scale: HTMLInputElement,
+  scaleNumber: HTMLInputElement,
+): void {
+  const label = parent.ownerDocument.createElement("label");
+  label.className = "scale-control";
+  label.append("Scale");
+  const inputs = parent.ownerDocument.createElement("div");
+  inputs.className = "scale-inputs";
+  inputs.append(scale, scaleNumber);
+  label.append(inputs);
+  parent.append(label);
+}
 function manualScale(sizing: Sizing): number {
   return sizing.kind === "fit-width" ? sizing.lastScalePercent : sizing.percent;
 }
@@ -811,11 +826,14 @@ async function decodeContentImage(
       bitmap.close();
     }
   } catch (error) {
-    console.error("[Pixel Pincher] createImageBitmap could not decode the image.", {
-      error,
-      mimeType,
-      size: bytes.byteLength,
-    });
+    console.error(
+      "[Pixel Pincher] createImageBitmap could not decode the image.",
+      {
+        error,
+        mimeType,
+        size: bytes.byteLength,
+      },
+    );
     const image = new Image();
     const dataUrl = await dataUrlFor(blob);
     const loaded = await new Promise<HTMLImageElement>((resolve, reject) => {

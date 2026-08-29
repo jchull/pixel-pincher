@@ -133,6 +133,7 @@ describe("ControlPanel", () => {
         ?.getAttribute("aria-live"),
     ).toBe("polite");
     expect(buttons.some((button) => button.id.startsWith("move-"))).toBe(false);
+    expect(buttons.some((button) => button.id === "reset-scale")).toBe(false);
   });
 
   it("moves only from its dedicated handle, persists on pointer-up and lost capture, and cancels on Escape", () => {
@@ -243,6 +244,22 @@ describe("ControlPanel", () => {
         kind: "update-settings",
         patch: { kind: "opacity", opacity: 0.4 },
       }),
+    );
+    const scale = byId<HTMLInputElement>("scale");
+    const scaleNumber = byId<HTMLInputElement>("scale-number");
+    scale.value = "125";
+    scale.dispatchEvent(new Event("input"));
+    expect(scaleNumber.value).toBe("125");
+    scaleNumber.value = "150";
+    scaleNumber.dispatchEvent(new Event("input"));
+    expect(scale.value).toBe("150");
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          kind: "update-settings",
+          patch: { kind: "sizing", sizing: { kind: "scale", percent: 150 } },
+        }),
+      ),
     );
     byId<HTMLInputElement>("visible").click();
     byId<HTMLInputElement>("fit-width").click();
