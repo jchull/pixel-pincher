@@ -60,16 +60,22 @@ export class OverlayController {
     this.#image.addEventListener("pointermove", this.#handlePointerMove);
     this.#image.addEventListener("pointerup", this.#handlePointerUp);
     this.#image.addEventListener("pointercancel", this.#handlePointerCancel);
-    this.#image.addEventListener("lostpointercapture", this.#handlePointerCancel);
+    this.#image.addEventListener(
+      "lostpointercapture",
+      this.#handlePointerCancel,
+    );
     this.#image.addEventListener("dragstart", preventDefault);
-    this.#window.addEventListener("scroll", this.#schedulePaint, { passive: true });
+    this.#window.addEventListener("scroll", this.#schedulePaint, {
+      passive: true,
+    });
     this.#window.addEventListener("resize", this.#schedulePaint);
     this.#window.addEventListener("keydown", this.#handleKeyDown);
     this.#host.style.display = "none";
   }
 
   hydrate(hydration: Hydration): Promise<Result<void, RenderError>> {
-    if (this.#destroyed || this.#isStale(hydration.snapshot.revision)) return Promise.resolve({ ok: true, value: undefined });
+    if (this.#destroyed || this.#isStale(hydration.snapshot.revision))
+      return Promise.resolve({ ok: true, value: undefined });
     this.#revision = hydration.snapshot.revision;
     this.#cancelDrag();
     this.#snapshot = hydration.snapshot;
@@ -79,16 +85,29 @@ export class OverlayController {
       return Promise.resolve({ ok: true, value: undefined });
     }
     const referenceId = hydration.reference.metadata.id;
-    if (this.#referenceId !== referenceId || this.#image.getAttribute("src") !== hydration.reference.dataUrl) {
+    if (
+      this.#referenceId !== referenceId ||
+      this.#image.getAttribute("src") !== hydration.reference.dataUrl
+    ) {
       this.#imageGeneration += 1;
       this.#imageFailed = false;
       this.#referenceId = referenceId;
       const generation = this.#imageGeneration;
       this.#image.onload = () => {
-        if (!this.#destroyed && this.#imageGeneration === generation && this.#referenceId === referenceId) this.#schedulePaint();
+        if (
+          !this.#destroyed &&
+          this.#imageGeneration === generation &&
+          this.#referenceId === referenceId
+        )
+          this.#schedulePaint();
       };
       this.#image.onerror = () => {
-        if (!this.#destroyed && this.#imageGeneration === generation && this.#referenceId === referenceId && !this.#imageFailed) {
+        if (
+          !this.#destroyed &&
+          this.#imageGeneration === generation &&
+          this.#referenceId === referenceId &&
+          !this.#imageFailed
+        ) {
           this.#imageFailed = true;
           this.#schedulePaint();
           this.#onImageLoadFailed(referenceId);
@@ -105,7 +124,11 @@ export class OverlayController {
     this.#revision = snapshot.revision;
     this.#cancelDrag();
     this.#snapshot = snapshot;
-    if (snapshot.reference === null || snapshot.reference.id !== this.#referenceId) this.#clearImage();
+    if (
+      snapshot.reference === null ||
+      snapshot.reference.id !== this.#referenceId
+    )
+      this.#clearImage();
     this.#schedulePaint();
   }
 
@@ -129,7 +152,10 @@ export class OverlayController {
     this.#image.removeEventListener("pointermove", this.#handlePointerMove);
     this.#image.removeEventListener("pointerup", this.#handlePointerUp);
     this.#image.removeEventListener("pointercancel", this.#handlePointerCancel);
-    this.#image.removeEventListener("lostpointercapture", this.#handlePointerCancel);
+    this.#image.removeEventListener(
+      "lostpointercapture",
+      this.#handlePointerCancel,
+    );
     this.#image.removeEventListener("dragstart", preventDefault);
     this.#host.remove();
   }
@@ -155,19 +181,26 @@ export class OverlayController {
 
   #paint(): void {
     const snapshot = this.#snapshot;
-    if (snapshot === undefined || snapshot.reference === null || this.#referenceId !== snapshot.reference.id || this.#imageFailed) {
+    if (
+      snapshot === undefined ||
+      snapshot.reference === null ||
+      this.#referenceId !== snapshot.reference.id ||
+      this.#imageFailed
+    ) {
       this.#host.style.display = "none";
       return;
     }
     const { reference, settings } = snapshot;
     this.#host.style.display = settings.visible ? "block" : "none";
     this.#host.style.pointerEvents = "none";
-    this.#image.style.pointerEvents = settings.interactionMode === "drag" ? "auto" : "none";
+    this.#image.style.pointerEvents =
+      settings.interactionMode === "drag" ? "auto" : "none";
     this.#image.style.opacity = String(settings.opacity);
     this.#image.style.filter = settings.inverted ? "invert(1)" : "none";
-    const width = settings.sizing.kind === "fit-width"
-      ? this.#window.innerWidth
-      : reference.width * settings.sizing.percent / 100;
+    const width =
+      settings.sizing.kind === "fit-width"
+        ? this.#window.innerWidth
+        : (reference.width * settings.sizing.percent) / 100;
     this.#image.style.width = `${width}px`;
     this.#image.style.height = "auto";
     this.#image.style.transform = `translate3d(${settings.placement.x - this.#window.scrollX}px, ${settings.placement.y - this.#window.scrollY}px, 0)`;
@@ -175,23 +208,52 @@ export class OverlayController {
 
   #handlePointerDown = (event: PointerEvent): void => {
     const snapshot = this.#snapshot;
-    if (snapshot === undefined || snapshot.settings.interactionMode !== "drag" || event.button !== 0) return;
-    this.#drag = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, placement: snapshot.settings.placement };
+    if (
+      snapshot === undefined ||
+      snapshot.settings.interactionMode !== "drag" ||
+      event.button !== 0
+    )
+      return;
+    this.#drag = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      placement: snapshot.settings.placement,
+    };
     this.#image.setPointerCapture(event.pointerId);
     event.preventDefault();
   };
 
   #handlePointerMove = (event: PointerEvent): void => {
     const drag = this.#drag;
-    if (drag === undefined || drag.pointerId !== event.pointerId || this.#snapshot === undefined) return;
-    this.#snapshot = { ...this.#snapshot, settings: { ...this.#snapshot.settings, placement: { x: drag.placement.x + event.clientX - drag.clientX, y: drag.placement.y + event.clientY - drag.clientY } } };
+    if (
+      drag === undefined ||
+      drag.pointerId !== event.pointerId ||
+      this.#snapshot === undefined
+    )
+      return;
+    this.#snapshot = {
+      ...this.#snapshot,
+      settings: {
+        ...this.#snapshot.settings,
+        placement: {
+          x: drag.placement.x + event.clientX - drag.clientX,
+          y: drag.placement.y + event.clientY - drag.clientY,
+        },
+      },
+    };
     event.preventDefault();
     this.#schedulePaint();
   };
 
   #handlePointerUp = (event: PointerEvent): void => {
     const drag = this.#drag;
-    if (drag === undefined || drag.pointerId !== event.pointerId || this.#snapshot === undefined) return;
+    if (
+      drag === undefined ||
+      drag.pointerId !== event.pointerId ||
+      this.#snapshot === undefined
+    )
+      return;
     this.#handlePointerMove(event);
     this.#commitDrag(event.pointerId);
   };
@@ -203,8 +265,16 @@ export class OverlayController {
 
   #handleKeyDown = (event: KeyboardEvent): void => {
     const drag = this.#drag;
-    if (drag === undefined || event.key !== "Escape" || this.#snapshot === undefined) return;
-    this.#snapshot = { ...this.#snapshot, settings: { ...this.#snapshot.settings, placement: drag.placement } };
+    if (
+      drag === undefined ||
+      event.key !== "Escape" ||
+      this.#snapshot === undefined
+    )
+      return;
+    this.#snapshot = {
+      ...this.#snapshot,
+      settings: { ...this.#snapshot.settings, placement: drag.placement },
+    };
     this.#cancelDrag();
     this.#schedulePaint();
   };
@@ -215,9 +285,13 @@ export class OverlayController {
       x: clampPlacement(this.#snapshot.settings.placement.x),
       y: clampPlacement(this.#snapshot.settings.placement.y),
     };
-    this.#snapshot = { ...this.#snapshot, settings: { ...this.#snapshot.settings, placement } };
+    this.#snapshot = {
+      ...this.#snapshot,
+      settings: { ...this.#snapshot.settings, placement },
+    };
     this.#drag = undefined;
-    if (this.#image.hasPointerCapture(pointerId)) this.#image.releasePointerCapture(pointerId);
+    if (this.#image.hasPointerCapture(pointerId))
+      this.#image.releasePointerCapture(pointerId);
     this.#schedulePaint();
     this.#onPlacementCommitted(placement);
   }
@@ -225,10 +299,10 @@ export class OverlayController {
   #cancelDrag(): void {
     const drag = this.#drag;
     this.#drag = undefined;
-    if (drag !== undefined && this.#image.hasPointerCapture(drag.pointerId)) this.#image.releasePointerCapture(drag.pointerId);
+    if (drag !== undefined && this.#image.hasPointerCapture(drag.pointerId))
+      this.#image.releasePointerCapture(drag.pointerId);
   }
 }
-
 
 function findOrCreateHost(document: Document): HTMLElement {
   const existing = document.getElementById(HOST_ID);
@@ -248,7 +322,10 @@ function rootFor(host: HTMLElement): ShadowRoot {
   return root;
 }
 
-function findOrCreateImage(root: ShadowRoot, document: Document): HTMLImageElement {
+function findOrCreateImage(
+  root: ShadowRoot,
+  document: Document,
+): HTMLImageElement {
   const existing = root.querySelector("img");
   if (existing instanceof HTMLImageElement) return existing;
   const style = document.createElement("style");

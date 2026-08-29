@@ -15,35 +15,52 @@ const metadata = {
   importedAt: 1,
 };
 
-function parse<T>(value: { readonly ok: true; readonly value: T } | { readonly ok: false }): T {
+function parse<T>(
+  value: { readonly ok: true; readonly value: T } | { readonly ok: false },
+): T {
   if (!value.ok) throw new Error("Fixture failed validation.");
   return value.value;
 }
 
-function snapshot(revision: number, settings: Record<string, unknown> = {}): OverlaySnapshot {
-  return parse(parseOverlaySnapshot({
-    revision,
-    origin: "https://example.test",
-    pageKey: "https://example.test/page",
-    reference: metadata,
-    settings: {
-      visible: true,
-      opacity: 0.5,
-      inverted: false,
-      placement: { x: 10, y: 20 },
-      sizing: { kind: "scale", percent: 100 },
-      interactionMode: "click-through",
-      ...settings,
-    },
-  }));
+function snapshot(
+  revision: number,
+  settings: Record<string, unknown> = {},
+): OverlaySnapshot {
+  return parse(
+    parseOverlaySnapshot({
+      revision,
+      origin: "https://example.test",
+      pageKey: "https://example.test/page",
+      reference: metadata,
+      settings: {
+        visible: true,
+        opacity: 0.5,
+        inverted: false,
+        placement: { x: 10, y: 20 },
+        sizing: { kind: "scale", percent: 100 },
+        interactionMode: "click-through",
+        ...settings,
+      },
+    }),
+  );
 }
 
 function hydration(revision = 1): Hydration {
   const current = snapshot(revision);
-  return parse(parseHydration({ snapshot: current, reference: { metadata, dataUrl } }));
+  return parse(
+    parseHydration({ snapshot: current, reference: { metadata, dataUrl } }),
+  );
 }
 
-function pointer(type: string, values: Readonly<{ button?: number; pointerId: number; clientX: number; clientY: number }>): Event {
+function pointer(
+  type: string,
+  values: Readonly<{
+    button?: number;
+    pointerId: number;
+    clientX: number;
+    clientY: number;
+  }>,
+): Event {
   const event = new Event(type, { bubbles: true, cancelable: true });
   Object.defineProperties(event, {
     button: { value: values.button ?? 0 },
@@ -78,11 +95,14 @@ describe("OverlayController", () => {
     document.body.replaceChildren();
     overlayImage = undefined;
     const createElement = document.createElement.bind(document);
-    vi.spyOn(document, "createElement").mockImplementation((tagName: string) => {
-      const created = createElement(tagName);
-      if (tagName === "img" && created instanceof HTMLImageElement) overlayImage = created;
-      return created;
-    });
+    vi.spyOn(document, "createElement").mockImplementation(
+      (tagName: string) => {
+        const created = createElement(tagName);
+        if (tagName === "img" && created instanceof HTMLImageElement)
+          overlayImage = created;
+        return created;
+      },
+    );
     frame = undefined;
     commits = vi.fn();
     failures = vi.fn();
@@ -104,7 +124,9 @@ describe("OverlayController", () => {
     paint();
     const overlay = image();
     expect(document.querySelectorAll("#pixel-pincher-overlay")).toHaveLength(1);
-    expect(document.querySelector("#pixel-pincher-overlay")?.shadowRoot).toBeNull();
+    expect(
+      document.querySelector("#pixel-pincher-overlay")?.shadowRoot,
+    ).toBeNull();
     expect(overlay.src).toBe(dataUrl);
     expect(overlay.style.width).toBe("200px");
     expect(overlay.style.opacity).toBe("0.5");
@@ -120,16 +142,23 @@ describe("OverlayController", () => {
   });
 
   it("coalesces repaints, handles fit width and visibility without losing its image", () => {
-    Object.defineProperty(window, "innerWidth", { configurable: true, value: 777 });
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 777,
+    });
     controller.hydrate(hydration());
-    controller.apply(snapshot(2, { sizing: { kind: "fit-width", lastScalePercent: 100 } }));
+    controller.apply(
+      snapshot(2, { sizing: { kind: "fit-width", lastScalePercent: 100 } }),
+    );
     expect(frame).toBeDefined();
     paint();
     expect(image().style.width).toBe("777px");
 
     controller.apply(snapshot(3, { visible: false }));
     paint();
-    expect(document.querySelector("#pixel-pincher-overlay")?.getAttribute("style")).toContain("display: none");
+    expect(
+      document.querySelector("#pixel-pincher-overlay")?.getAttribute("style"),
+    ).toContain("display: none");
     controller.apply(snapshot(4));
     paint();
     expect(image().getAttribute("src")).toBe(dataUrl);
@@ -163,13 +192,23 @@ describe("OverlayController", () => {
       releasePointerCapture: { configurable: true, value: vi.fn() },
       setPointerCapture: { configurable: true, value: vi.fn() },
     });
-    overlay.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 10, clientY: 20 }));
-    overlay.dispatchEvent(pointer("pointermove", { pointerId: 1, clientX: 13.6, clientY: 15.2 }));
-    overlay.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 13.6, clientY: 15.2 }));
+    overlay.dispatchEvent(
+      pointer("pointerdown", { pointerId: 1, clientX: 10, clientY: 20 }),
+    );
+    overlay.dispatchEvent(
+      pointer("pointermove", { pointerId: 1, clientX: 13.6, clientY: 15.2 }),
+    );
+    overlay.dispatchEvent(
+      pointer("pointerup", { pointerId: 1, clientX: 13.6, clientY: 15.2 }),
+    );
     expect(commits).toHaveBeenCalledWith({ x: 14, y: 15 });
 
-    overlay.dispatchEvent(pointer("pointerdown", { pointerId: 2, clientX: 0, clientY: 0 }));
-    overlay.dispatchEvent(pointer("pointermove", { pointerId: 2, clientX: 40, clientY: 40 }));
+    overlay.dispatchEvent(
+      pointer("pointerdown", { pointerId: 2, clientX: 0, clientY: 0 }),
+    );
+    overlay.dispatchEvent(
+      pointer("pointermove", { pointerId: 2, clientX: 40, clientY: 40 }),
+    );
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(commits).toHaveBeenCalledTimes(1);
   });

@@ -8,7 +8,9 @@ const controllerKey = Symbol.for("pixel-pincher.overlay-controller");
 
 type ContentWindow = Window & { [controllerKey]?: OverlayController };
 
-export function startOverlayContent(contentWindow: ContentWindow = window): OverlayController {
+export function startOverlayContent(
+  contentWindow: ContentWindow = window,
+): OverlayController {
   const existing = contentWindow[controllerKey];
   if (existing !== undefined) return existing;
 
@@ -18,10 +20,22 @@ export function startOverlayContent(contentWindow: ContentWindow = window): Over
   const controller = new OverlayController({
     window: contentWindow,
     document: contentWindow.document,
-    requestAnimationFrame: contentWindow.requestAnimationFrame.bind(contentWindow),
-    cancelAnimationFrame: contentWindow.cancelAnimationFrame.bind(contentWindow),
-    onPlacementCommitted: (placement) => send({ kind: "placement-committed", url: contentWindow.location.href, placement }),
-    onImageLoadFailed: (referenceId) => send({ kind: "image-load-failed", url: contentWindow.location.href, referenceId }),
+    requestAnimationFrame:
+      contentWindow.requestAnimationFrame.bind(contentWindow),
+    cancelAnimationFrame:
+      contentWindow.cancelAnimationFrame.bind(contentWindow),
+    onPlacementCommitted: (placement) =>
+      send({
+        kind: "placement-committed",
+        url: contentWindow.location.href,
+        placement,
+      }),
+    onImageLoadFailed: (referenceId) =>
+      send({
+        kind: "image-load-failed",
+        url: contentWindow.location.href,
+        referenceId,
+      }),
   });
   contentWindow[controllerKey] = controller;
   chrome.runtime.onMessage.addListener((message: unknown) => {
