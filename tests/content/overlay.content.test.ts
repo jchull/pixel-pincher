@@ -85,23 +85,15 @@ describe("overlay content entrypoint", () => {
     });
   });
 
-  it("hydrates the in-page panel and sends its correlated sender-bound position request", () => {
+  it("hydrates the in-page panel without rendering arrow move controls", () => {
     startOverlayContent();
     if (listener === undefined) throw new Error("Expected content message listener.");
     listener(hydrationMessage());
-
-    const right = buttons.find((button) => button.dataset.direction === "right");
-    if (right === undefined) throw new Error("Expected move-right control.");
-    right.click();
 
     expect(sendMessage).toHaveBeenNthCalledWith(1, {
       kind: "content-ready",
       url: window.location.href,
     });
-    expect(sendMessage).toHaveBeenLastCalledWith({
-      kind: "update-panel-position",
-      requestId: "panel-1",
-      panelPosition: { x: 40, y: 24 },
-    });
+    expect(buttons.some((button) => button.id.startsWith("move-"))).toBe(false);
   });
 });

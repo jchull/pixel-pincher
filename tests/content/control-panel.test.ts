@@ -24,30 +24,40 @@ function parse<T>(
 
 function snapshot(
   revision: number,
-  panelPosition: Readonly<{ x: number; y: number }> | undefined = { x: 20, y: 30 },
+  panelPosition: Readonly<{ x: number; y: number }> | undefined = {
+    x: 20,
+    y: 30,
+  },
   settings: Record<string, unknown> = {},
 ): OverlaySnapshot {
-  return parse(parseOverlaySnapshotWithPanelPosition({
-    revision,
-    origin: "https://example.test",
-    pageKey: "https://example.test/page",
-    reference: metadata,
-    settings: {
-      visible: true,
-      opacity: 0.5,
-      inverted: false,
-      placement: { x: 10, y: 20 },
-      sizing: { kind: "scale", percent: 100 },
-      interactionMode: "click-through",
-      ...settings,
-    },
-    ...(panelPosition === undefined ? {} : { panelPosition }),
-  }));
+  return parse(
+    parseOverlaySnapshotWithPanelPosition({
+      revision,
+      origin: "https://example.test",
+      pageKey: "https://example.test/page",
+      reference: metadata,
+      settings: {
+        visible: true,
+        opacity: 0.5,
+        inverted: false,
+        placement: { x: 10, y: 20 },
+        sizing: { kind: "scale", percent: 100 },
+        interactionMode: "click-through",
+        ...settings,
+      },
+      ...(panelPosition === undefined ? {} : { panelPosition }),
+    }),
+  );
 }
 
 function pointer(
   type: string,
-  values: Readonly<{ pointerId: number; clientX: number; clientY: number; button?: number }>,
+  values: Readonly<{
+    pointerId: number;
+    clientX: number;
+    clientY: number;
+    button?: number;
+  }>,
 ): Event {
   const event = new Event(type, { bubbles: true, cancelable: true });
   Object.defineProperties(event, {
@@ -77,27 +87,52 @@ describe("ControlPanel", () => {
     buttons = [];
     elements = [];
     const createElement = document.createElement.bind(document);
-    vi.spyOn(document, "createElement").mockImplementation((tagName: string) => {
-      const created = createElement(tagName);
-      if (created instanceof HTMLButtonElement) buttons.push(created);
-      if (created instanceof HTMLElement) elements.push(created);
-      return created;
+    vi.spyOn(document, "createElement").mockImplementation(
+      (tagName: string) => {
+        const created = createElement(tagName);
+        if (created instanceof HTMLButtonElement) buttons.push(created);
+        if (created instanceof HTMLElement) elements.push(created);
+        return created;
+      },
+    );
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 400,
     });
-    Object.defineProperty(window, "innerWidth", { configurable: true, value: 400 });
-    Object.defineProperty(window, "innerHeight", { configurable: true, value: 300 });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 300,
+    });
     commits = vi.fn();
-    panel = new ControlPanel({ window, document, onPositionCommitted: commits });
+    panel = new ControlPanel({
+      window,
+      document,
+      onPositionCommitted: commits,
+    });
   });
 
   it("renders hydrated reference metadata and visibility in an isolated closed shadow panel", () => {
     panel.apply(snapshot(1));
-    const host = document.querySelector<HTMLElement>("#pixel-pincher-control-panel");
+    const host = document.querySelector<HTMLElement>(
+      "#pixel-pincher-control-panel",
+    );
     expect(host?.shadowRoot).toBeNull();
     expect(host?.style.left).toBe("20px");
     expect(host?.style.top).toBe("30px");
-    expect(elements.find((element) => element.classList.contains("reference"))?.textContent).toBe("reference.png · 200 × 100");
-    expect(elements.find((element) => element.classList.contains("visibility"))?.textContent).toContain("Overlay visible");
-    expect(elements.find((element) => element.getAttribute("role") === "status")?.getAttribute("aria-live")).toBe("polite");
+    expect(
+      elements.find((element) => element.classList.contains("reference"))
+        ?.textContent,
+    ).toBe("reference.png · 200 × 100");
+    expect(
+      elements.find((element) => element.classList.contains("visibility"))
+        ?.textContent,
+    ).toContain("Overlay visible");
+    expect(
+      elements
+        .find((element) => element.getAttribute("role") === "status")
+        ?.getAttribute("aria-live"),
+    ).toBe("polite");
+    expect(buttons.some((button) => button.id.startsWith("move-"))).toBe(false);
   });
 
   it("moves only from its dedicated handle, persists on pointer-up and lost capture, and cancels on Escape", () => {
@@ -109,21 +144,40 @@ describe("ControlPanel", () => {
       setPointerCapture: { configurable: true, value: vi.fn() },
     });
 
-    dragHandle.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 10, clientY: 10 }));
-    dragHandle.dispatchEvent(pointer("pointermove", { pointerId: 1, clientX: 60, clientY: 40 }));
-    dragHandle.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 60, clientY: 40 }));
+    dragHandle.dispatchEvent(
+      pointer("pointerdown", { pointerId: 1, clientX: 10, clientY: 10 }),
+    );
+    dragHandle.dispatchEvent(
+      pointer("pointermove", { pointerId: 1, clientX: 60, clientY: 40 }),
+    );
+    dragHandle.dispatchEvent(
+      pointer("pointerup", { pointerId: 1, clientX: 60, clientY: 40 }),
+    );
     expect(commits).toHaveBeenLastCalledWith({ x: 70, y: 60 });
 
-    dragHandle.dispatchEvent(pointer("pointerdown", { pointerId: 2, clientX: 0, clientY: 0 }));
-    dragHandle.dispatchEvent(pointer("pointermove", { pointerId: 2, clientX: 10, clientY: 10 }));
-    dragHandle.dispatchEvent(pointer("lostpointercapture", { pointerId: 2, clientX: 10, clientY: 10 }));
+    dragHandle.dispatchEvent(
+      pointer("pointerdown", { pointerId: 2, clientX: 0, clientY: 0 }),
+    );
+    dragHandle.dispatchEvent(
+      pointer("pointermove", { pointerId: 2, clientX: 10, clientY: 10 }),
+    );
+    dragHandle.dispatchEvent(
+      pointer("lostpointercapture", { pointerId: 2, clientX: 10, clientY: 10 }),
+    );
     expect(commits).toHaveBeenLastCalledWith({ x: 80, y: 70 });
 
-    dragHandle.dispatchEvent(pointer("pointerdown", { pointerId: 3, clientX: 0, clientY: 0 }));
-    dragHandle.dispatchEvent(pointer("pointermove", { pointerId: 3, clientX: 100, clientY: 100 }));
+    dragHandle.dispatchEvent(
+      pointer("pointerdown", { pointerId: 3, clientX: 0, clientY: 0 }),
+    );
+    dragHandle.dispatchEvent(
+      pointer("pointermove", { pointerId: 3, clientX: 100, clientY: 100 }),
+    );
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(commits).toHaveBeenCalledTimes(2);
-    expect(document.querySelector<HTMLElement>("#pixel-pincher-control-panel")?.style.left).toBe("80px");
+    expect(
+      document.querySelector<HTMLElement>("#pixel-pincher-control-panel")?.style
+        .left,
+    ).toBe("80px");
   });
 
   it("sends correlated panel mutations for the complete enabled-site surface and coalesces opacity", async () => {
@@ -133,40 +187,72 @@ describe("ControlPanel", () => {
       value: snapshot(2),
     }));
     const dataUrl = "data:image/png;base64,AQID";
-    const imported = parse(parseImportedReference({
-      metadata: { ...metadata, encodedBytes: dataUrl.length },
-      dataUrl,
+    const imported = parse(
+      parseImportedReference({
+        metadata: { ...metadata, encodedBytes: dataUrl.length },
+        dataUrl,
+      }),
+    );
+    const importer = vi.fn(async () => ({
+      ok: true as const,
+      value: imported,
     }));
-    const importer = vi.fn(async () => ({ ok: true as const, value: imported }));
     panel.destroy();
-    panel = new ControlPanel({ window, document, request: send, importReference: importer });
+    panel = new ControlPanel({
+      window,
+      document,
+      request: send,
+      importReference: importer,
+    });
     panel.apply(snapshot(1));
     const byId = <T extends HTMLElement>(id: string): T => {
-      const found = [...elements].reverse().find((element) => element.id === id);
+      const found = [...elements]
+        .reverse()
+        .find((element) => element.id === id);
       if (found === undefined) throw new Error(`Expected ${id}.`);
       return found as T;
     };
     const file = byId<HTMLInputElement>("reference-file");
-    Object.defineProperty(file, "files", { configurable: true, value: [new File(["x"], "reference.png", { type: "image/png" })] });
+    Object.defineProperty(file, "files", {
+      configurable: true,
+      value: [new File(["x"], "reference.png", { type: "image/png" })],
+    });
     file.dispatchEvent(new Event("change"));
     await vi.waitFor(() => expect(importer).toHaveBeenCalledOnce());
-    expect(send).toHaveBeenCalledWith(expect.objectContaining({ kind: "replace-reference", reference: imported }));
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "replace-reference",
+        reference: imported,
+      }),
+    );
     const opacity = byId<HTMLInputElement>("opacity");
     opacity.value = "30";
     opacity.dispatchEvent(new Event("input"));
     opacity.value = "40";
     opacity.dispatchEvent(new Event("input"));
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(3));
-    expect(send).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      kind: "update-settings", patch: { kind: "opacity", opacity: 0.3 },
-    }));
-    expect(send).toHaveBeenLastCalledWith(expect.objectContaining({
-      kind: "update-settings", patch: { kind: "opacity", opacity: 0.4 },
-    }));
+    expect(send).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        kind: "update-settings",
+        patch: { kind: "opacity", opacity: 0.3 },
+      }),
+    );
+    expect(send).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        kind: "update-settings",
+        patch: { kind: "opacity", opacity: 0.4 },
+      }),
+    );
     byId<HTMLButtonElement>("toggle-visibility").click();
-    await vi.waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({
-      kind: "update-settings", patch: { kind: "visibility", visible: false },
-    })));
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "update-settings",
+          patch: { kind: "visibility", visible: false },
+        }),
+      ),
+    );
     byId<HTMLInputElement>("visible").click();
     byId<HTMLInputElement>("fit-width").click();
     byId<HTMLInputElement>("inverted").click();
@@ -178,18 +264,23 @@ describe("ControlPanel", () => {
     clear.click();
     expect(clear.textContent).toContain("Confirm");
     clear.click();
-    await vi.waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({ kind: "clear-site" })));
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "clear-site" }),
+      ),
+    );
   });
 
-  it("clamps persisted and keyboard positions to keep its handle reachable", () => {
+  it("clamps persisted positions to keep its handle reachable", () => {
     panel.apply(snapshot(1, { x: 999, y: 999 }, { visible: false }));
-    const host = document.querySelector<HTMLElement>("#pixel-pincher-control-panel");
+    const host = document.querySelector<HTMLElement>(
+      "#pixel-pincher-control-panel",
+    );
     expect(host?.style.left).toBe("352px");
     expect(host?.style.top).toBe("260px");
-    const left = buttons.find((button) => button.dataset.direction === "left");
-    if (left === undefined) throw new Error("Expected move-left button.");
-    left.click();
-    expect(commits).toHaveBeenLastCalledWith({ x: 336, y: 260 });
-    expect(elements.find((element) => element.classList.contains("visibility"))?.textContent).toContain("Overlay hidden");
+    expect(
+      elements.find((element) => element.classList.contains("visibility"))
+        ?.textContent,
+    ).toContain("Overlay hidden");
   });
 });

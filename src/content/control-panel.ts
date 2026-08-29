@@ -22,7 +22,6 @@ import { parseContentPanelResponse } from "../shared/panel-position";
 
 const HOST_ID = "pixel-pincher-control-panel";
 const DEFAULT_POSITION: PanelPosition = { x: 24, y: 24 };
-const KEYBOARD_STEP = 16;
 const MIN_REACHABLE_WIDTH = 48;
 const MIN_REACHABLE_HEIGHT = 40;
 const roots = new WeakMap<HTMLElement, ShadowRoot>();
@@ -56,7 +55,6 @@ type DragState = Readonly<{
   clientY: number;
   position: PanelPosition;
 }>;
-type MoveDirection = "up" | "down" | "left" | "right";
 type PendingSetting = Readonly<{ patch: SettingsPatch; coalesce: boolean }>;
 
 type PanelElements = Readonly<{
@@ -78,7 +76,6 @@ type PanelElements = Readonly<{
   y: HTMLInputElement;
   clear: HTMLButtonElement;
   confirm: HTMLElement;
-  moves: readonly HTMLButtonElement[];
 }>;
 
 export class ControlPanel {
@@ -131,8 +128,6 @@ export class ControlPanel {
     e.x.addEventListener("keydown", this.#handleNumberKey);
     e.y.addEventListener("keydown", this.#handleNumberKey);
     e.clear.addEventListener("click", this.#toggleClear);
-    for (const button of e.moves)
-      button.addEventListener("click", this.#handleMoveButton);
     this.#window.addEventListener("resize", this.#handleResize);
     this.#window.addEventListener("keydown", this.#handleKeyDown);
     this.#host.style.display = "none";
@@ -183,7 +178,9 @@ export class ControlPanel {
     const disabled = reference === null;
     e.file.disabled = false;
     e.toggleVisibility.disabled = disabled;
-    e.toggleVisibility.textContent = settings.visible ? "Hide overlay" : "Show overlay";
+    e.toggleVisibility.textContent = settings.visible
+      ? "Hide overlay"
+      : "Show overlay";
     e.visible.checked = settings.visible;
     const visibility = this.#host
       ? roots.get(this.#host)?.querySelector<HTMLElement>(".visibility")
@@ -476,21 +473,6 @@ export class ControlPanel {
       this.#render();
     }
   };
-  #handleMoveButton = (event: Event): void => {
-    const button = event.currentTarget;
-    if (
-      !(button instanceof HTMLButtonElement) ||
-      !isMoveDirection(button.dataset.direction)
-    )
-      return;
-    const delta = directionDelta(button.dataset.direction);
-    this.#position = this.#clamp({
-      x: this.#position.x + delta.x,
-      y: this.#position.y + delta.y,
-    });
-    this.#render();
-    this.#commitPosition();
-  };
   #commitDrag(pointerId: number): void {
     this.#dragState = undefined;
     if (this.#elements.handle.hasPointerCapture(pointerId))
@@ -595,7 +577,11 @@ function findOrCreatePanel(
   file.type = "file";
   file.accept = "image/png,image/jpeg,image/webp,image/svg+xml";
   file.setAttribute("aria-label", "Choose or replace reference image");
-  const toggleVisibility = button(document, "toggle-visibility", "Hide overlay");
+  const toggleVisibility = button(
+    document,
+    "toggle-visibility",
+    "Hide overlay",
+  );
   const controls = document.createElement("fieldset");
   controls.className = "controls";
   const legend = document.createElement("legend");
@@ -649,7 +635,6 @@ function findOrCreatePanel(
     clickThrough.parentElement!,
     drag.parentElement!,
   );
-  const moves = createMoveControls(document);
   const clear = button(document, "clear-site", "Clear site data");
   const confirm = document.createElement("p");
   confirm.textContent =
@@ -665,7 +650,6 @@ function findOrCreatePanel(
     toggleVisibility,
     file,
     controls,
-    moves.container,
     clear,
     confirm,
     live,
@@ -691,7 +675,6 @@ function findOrCreatePanel(
     y,
     clear,
     confirm,
-    moves: moves.buttons,
   };
 }
 function button(
@@ -772,28 +755,6 @@ function appendLabeled(
   if (extra !== undefined) wrapper.append(extra);
   parent.append(wrapper);
 }
-function createMoveControls(
-  document: Document,
-): Readonly<{ container: HTMLElement; buttons: readonly HTMLButtonElement[] }> {
-  const container = document.createElement("div");
-  container.className = "moves";
-  const buttons = (
-    [
-      ["up", "↑"],
-      ["left", "←"],
-      ["down", "↓"],
-      ["right", "→"],
-    ] as const
-  ).map(([direction, symbol]) => {
-    const b = button(document, `move-${direction}`, `Move panel ${direction}`);
-    b.className = `move move-${direction}`;
-    b.dataset.direction = direction;
-    b.textContent = symbol;
-    return b;
-  });
-  container.append(...buttons);
-  return { container, buttons };
-}
 function manualScale(sizing: Sizing): number {
   return sizing.kind === "fit-width" ? sizing.lastScalePercent : sizing.percent;
 }
@@ -805,23 +766,6 @@ function clampScale(value: number): number {
 }
 function clampPlacement(value: number): number {
   return Math.min(MAX_PLACEMENT, Math.max(MIN_PLACEMENT, Math.round(value)));
-}
-function directionDelta(direction: MoveDirection): PanelPosition {
-  switch (direction) {
-    case "up":
-      return { x: 0, y: -KEYBOARD_STEP };
-    case "down":
-      return { x: 0, y: KEYBOARD_STEP };
-    case "left":
-      return { x: -KEYBOARD_STEP, y: 0 };
-    case "right":
-      return { x: KEYBOARD_STEP, y: 0 };
-  }
-}
-function isMoveDirection(value: string | undefined): value is MoveDirection {
-  return (
-    value === "up" || value === "down" || value === "left" || value === "right"
-  );
 }
 function preventDefault(event: Event): void {
   event.preventDefault();

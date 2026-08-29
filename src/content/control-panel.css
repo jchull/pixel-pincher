@@ -52,7 +52,8 @@
 }
 
 .handle:focus-visible,
-.move:focus-visible {
+.button:focus-visible,
+input:focus-visible {
   outline: 2px solid #60a5fa;
   outline-offset: -2px;
 }
@@ -112,34 +113,49 @@
   background: currentColor;
 }
 
-.moves {
+.controls {
   display: grid;
-  grid-template-columns: repeat(3, 32px);
-  grid-template-rows: repeat(2, 30px);
-  justify-content: center;
-  gap: 4px;
+  gap: 10px;
+  margin: 0;
+  border: 1px solid rgb(148 163 184 / 28%);
+  border-radius: 8px;
+  padding: 10px;
 }
 
-.move {
+.controls > label,
+.controls > .button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+}
+
+.controls input[type="range"],
+.controls input[type="number"] {
+  width: 100%;
+}
+
+.controls label:has(input[type="checkbox"]),
+.controls label:has(input[type="radio"]) {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.button {
+  width: 100%;
   border: 1px solid rgb(148 163 184 / 28%);
   border-radius: 6px;
+  padding: 7px 10px;
   background: rgb(51 65 85 / 65%);
   color: #f8fafc;
   cursor: pointer;
   font: inherit;
-  font-size: 15px;
-  line-height: 1;
+  font-weight: 650;
 }
 
-.move:hover {
+.button:hover:not(:disabled) {
   background: rgb(71 85 105 / 78%);
 }
-
-.move-up { grid-column: 2; grid-row: 1; }
-.move-left { grid-column: 1; grid-row: 2; }
-.move-down { grid-column: 2; grid-row: 2; }
-.move-right { grid-column: 3; grid-row: 2; }
-
 .live {
   min-height: 1.4em;
   margin: 0;
