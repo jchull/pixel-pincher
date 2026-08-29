@@ -64,7 +64,7 @@ type PanelElements = Readonly<{
   file: HTMLInputElement;
   visible: HTMLInputElement;
   opacity: HTMLInputElement;
-  opacityOutput: HTMLOutputElement;
+  opacityNumber: HTMLInputElement;
   fitWidth: HTMLInputElement;
   scale: HTMLInputElement;
   scaleNumber: HTMLInputElement;
@@ -113,6 +113,8 @@ export class ControlPanel {
     e.file.addEventListener("change", this.#handleFile);
     e.visible.addEventListener("change", this.#handleVisibility);
     e.opacity.addEventListener("input", this.#handleOpacity);
+    e.opacityNumber.addEventListener("input", this.#handleOpacityNumber);
+    e.opacityNumber.addEventListener("keydown", this.#handleNumberKey);
     e.fitWidth.addEventListener("change", this.#handleFitWidth);
     e.scale.addEventListener("input", this.#handleScale);
     e.scaleNumber.addEventListener("input", this.#handleScaleNumber);
@@ -182,7 +184,7 @@ export class ControlPanel {
         ? "Overlay visible"
         : "Overlay hidden";
     e.opacity.value = String(Math.round(settings.opacity * 100));
-    e.opacityOutput.value = `${e.opacity.value}%`;
+    e.opacityNumber.value = e.opacity.value;
     e.fitWidth.checked = settings.sizing.kind === "fit-width";
     const scale = manualScale(settings.sizing);
     e.scale.value = String(scale);
@@ -196,6 +198,7 @@ export class ControlPanel {
     for (const control of [
       e.visible,
       e.opacity,
+      e.opacityNumber,
       e.fitWidth,
       e.inverted,
       e.drag,
@@ -260,10 +263,15 @@ export class ControlPanel {
       visible: this.#elements.visible.checked,
     });
   #handleOpacity = (): void => {
-    const value = Number(this.#elements.opacity.value);
-    const opacity = Math.min(100, Math.max(0, Math.round(value))) / 100;
-    this.#elements.opacityOutput.value = `${Math.round(opacity * 100)}%`;
-    this.#queueSetting({ kind: "opacity", opacity }, true);
+    const percent = clampPercent(Number(this.#elements.opacity.value));
+    this.#elements.opacityNumber.value = String(percent);
+    this.#queueSetting({ kind: "opacity", opacity: percent / 100 }, true);
+  };
+  #handleOpacityNumber = (): void => {
+    const percent = Number(this.#elements.opacityNumber.value);
+    if (!Number.isSafeInteger(percent) || percent < 0 || percent > 100) return;
+    this.#elements.opacity.value = String(percent);
+    this.#queueSetting({ kind: "opacity", opacity: percent / 100 }, true);
   };
   #handleFitWidth = (): void => {
     const sizing = this.#snapshot?.settings.sizing;
@@ -340,6 +348,13 @@ export class ControlPanel {
     const value = Number(input.value);
     if (!Number.isSafeInteger(value)) {
       this.#render();
+      return;
+    }
+    if (input === this.#elements.opacityNumber) {
+      const percent = clampPercent(value);
+      this.#elements.opacity.value = String(percent);
+      this.#elements.opacityNumber.value = String(percent);
+      this.#queueSetting({ kind: "opacity", opacity: percent / 100 }, true);
       return;
     }
     if (input === this.#elements.scaleNumber) {
@@ -591,8 +606,7 @@ function findOrCreatePanel(
   controls.append(legend);
   const visible = checkbox(document, "visible", "Show overlay");
   const opacity = range(document, "opacity", 0, 100);
-  const opacityOutput = document.createElement("output");
-  opacityOutput.htmlFor = "opacity";
+  const opacityNumber = number(document, "opacity-number", 0, 100);
   const fitWidth = checkbox(document, "fit-width", "Fit to viewport width");
   const scale = range(document, "scale", MIN_SCALE_PERCENT, MAX_SCALE_PERCENT);
   const scaleNumber = number(
@@ -605,8 +619,8 @@ function findOrCreatePanel(
   const drag = checkbox(document, "interaction-drag", "Drag overlay");
   const x = number(document, "x", MIN_PLACEMENT, MAX_PLACEMENT);
   const y = number(document, "y", MIN_PLACEMENT, MAX_PLACEMENT);
-  appendLabeled(controls, "Opacity", opacity, opacityOutput);
-  appendScaleControl(controls, scale, scaleNumber);
+  appendRangeControl(controls, "Opacity", opacity, opacityNumber);
+  appendRangeControl(controls, "Scale", scale, scaleNumber);
   appendLabeled(controls, "X position", x);
   appendLabeled(controls, "Y position", y);
   controls.append(
@@ -634,7 +648,7 @@ function findOrCreatePanel(
     file,
     visible,
     opacity,
-    opacityOutput,
+    opacityNumber,
     fitWidth,
     scale,
     scaleNumber,
@@ -711,17 +725,18 @@ function appendLabeled(
   if (extra !== undefined) wrapper.append(extra);
   parent.append(wrapper);
 }
-function appendScaleControl(
+function appendRangeControl(
   parent: HTMLElement,
-  scale: HTMLInputElement,
-  scaleNumber: HTMLInputElement,
+  labelText: string,
+  range: HTMLInputElement,
+  number: HTMLInputElement,
 ): void {
   const label = parent.ownerDocument.createElement("label");
-  label.className = "scale-control";
-  label.append("Scale");
+  label.className = "range-control";
+  label.append(labelText);
   const inputs = parent.ownerDocument.createElement("div");
-  inputs.className = "scale-inputs";
-  inputs.append(scale, scaleNumber);
+  inputs.className = "range-inputs";
+  inputs.append(range, number);
   label.append(inputs);
   parent.append(label);
 }
@@ -733,6 +748,9 @@ function clampScale(value: number): number {
     MAX_SCALE_PERCENT,
     Math.max(MIN_SCALE_PERCENT, Math.round(value)),
   );
+}
+function clampPercent(value: number): number {
+  return Math.min(100, Math.max(0, Math.round(value)));
 }
 function clampPlacement(value: number): number {
   return Math.min(MAX_PLACEMENT, Math.max(MIN_PLACEMENT, Math.round(value)));

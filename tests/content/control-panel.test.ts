@@ -134,11 +134,15 @@ describe("ControlPanel", () => {
     ).toBe("polite");
     expect(buttons.some((button) => button.id.startsWith("move-"))).toBe(false);
     expect(buttons.some((button) => button.id === "reset-scale")).toBe(false);
-    const dragToggle = elements.find((element) => element.id === "interaction-drag");
+    const dragToggle = elements.find(
+      (element) => element.id === "interaction-drag",
+    );
     if (!(dragToggle instanceof HTMLInputElement))
       throw new Error("Expected drag toggle.");
     expect(dragToggle.type).toBe("checkbox");
-    expect(elements.some((element) => element.id === "interaction-click-through")).toBe(false);
+    expect(
+      elements.some((element) => element.id === "interaction-click-through"),
+    ).toBe(false);
   });
 
   it("moves only from its dedicated handle, persists on pointer-up and lost capture, and cancels on Escape", () => {
@@ -249,6 +253,21 @@ describe("ControlPanel", () => {
         kind: "update-settings",
         patch: { kind: "opacity", opacity: 0.4 },
       }),
+    );
+    const opacityNumber = byId<HTMLInputElement>("opacity-number");
+    opacity.value = "65";
+    opacity.dispatchEvent(new Event("input"));
+    expect(opacityNumber.value).toBe("65");
+    opacityNumber.value = "55";
+    opacityNumber.dispatchEvent(new Event("input"));
+    expect(opacity.value).toBe("55");
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          kind: "update-settings",
+          patch: { kind: "opacity", opacity: 0.55 },
+        }),
+      ),
     );
     const scale = byId<HTMLInputElement>("scale");
     const scaleNumber = byId<HTMLInputElement>("scale-number");
