@@ -193,8 +193,9 @@ export class OverlayController {
     const { reference, settings } = snapshot;
     this.#host.style.display = settings.visible ? "block" : "none";
     this.#host.style.pointerEvents = "none";
-    this.#image.style.pointerEvents =
-      settings.interactionMode === "drag" ? "auto" : "none";
+    const dragMode = settings.interactionMode === "drag";
+    this.#image.style.pointerEvents = dragMode ? "auto" : "none";
+    this.#image.classList.toggle("drag-mode", dragMode);
     this.#image.style.opacity = String(settings.opacity);
     this.#image.style.filter = settings.inverted ? "invert(1)" : "none";
     const width =

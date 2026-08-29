@@ -179,6 +179,7 @@ if (root === null) throw new Error("Popup root is missing.");
 const view: PopupView = {
   render(state) {
     if (state.kind === "error") selectedFile = undefined;
+    root.toggleAttribute("aria-busy", recovery(state).kind === "loading");
     root.replaceChildren(document.createRange().createContextualFragment(markup(state)));
     attach(root, controller);
   },

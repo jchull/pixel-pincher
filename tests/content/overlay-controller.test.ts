@@ -130,6 +130,7 @@ describe("OverlayController", () => {
     expect(overlay.src).toBe(dataUrl);
     expect(overlay.style.width).toBe("200px");
     expect(overlay.style.opacity).toBe("0.5");
+    expect(overlay.classList).not.toContain("drag-mode");
     expect(overlay.style.filter).toBe("none");
     expect(overlay.style.transform).toBe("translate3d(10px, 20px, 0)");
 
@@ -187,6 +188,7 @@ describe("OverlayController", () => {
     controller.apply(snapshot(2, { interactionMode: "drag" }));
     paint();
     const overlay = image();
+    expect(overlay.classList).toContain("drag-mode");
     Object.defineProperties(overlay, {
       hasPointerCapture: { configurable: true, value: vi.fn(() => false) },
       releasePointerCapture: { configurable: true, value: vi.fn() },
