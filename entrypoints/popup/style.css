@@ -1,0 +1,24 @@
+* { box-sizing: border-box; }
+
+body {
+  width: min(360px, 100vw);
+  margin: 0;
+  color: #1f2937;
+  background: #fff;
+  font: 14px/1.4 system-ui, sans-serif;
+}
+
+main { padding: 16px; }
+h1, h2 { margin: 0 0 8px; }
+h2 { font-size: 1rem; }
+section, fieldset { margin: 0 0 14px; }
+fieldset { min-width: 0; border: 1px solid #9ca3af; }
+label, input, button { display: block; }
+label { margin-top: 8px; }
+label > input { display: inline-block; margin-right: 6px; }
+input[type="range"], input[type="number"] { width: 100%; }
+input[type="radio"] { display: inline-block; }
+button { margin-top: 8px; padding: 5px 8px; }
+button:focus-visible, input:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+.error { color: #b91c1c; font-weight: 600; }
+output { float: right; }
