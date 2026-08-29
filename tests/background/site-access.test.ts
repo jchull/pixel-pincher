@@ -6,6 +6,7 @@ import type { StorageAdapter } from "../../src/background/storage-adapter";
 import {
   createChromeSiteAccessAdapter,
   OVERLAY_REGISTRATION_PREFIX,
+  originFromMatch,
   type ObservedRegistration,
   type RuntimeRegistration,
   type SiteAccessAdapter,
@@ -184,6 +185,13 @@ describe("createChromeSiteAccessAdapter", () => {
 });
 
 describe("SiteAccessService", () => {
+  it("parses only exact supported origin permission matches", () => {
+    expect(originFromMatch("https://example.com/*")).toBe(getOrigin(new URL("https://example.com/page")));
+    expect(originFromMatch("https://*/*")).toBeUndefined();
+    expect(originFromMatch("https://example.com/path/*")).toBeUndefined();
+    expect(originFromMatch("chrome://extensions/*")).toBeUndefined();
+  });
+
   it("rejects registration without an optional origin grant", async () => {
     const service = new SiteAccessService(new FakeSiteAccessAdapter(), new OverlayRepository(new MemoryStorage()));
     const result = await service.ensureForUrl(new URL("https://example.com/page"));

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const lifecycle = vi.hoisted(() => {
   type MessageListener = (message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => boolean | undefined;
   const installedListeners: Array<() => void> = [];
-  const permissionRemovedListeners: Array<() => void> = [];
+  const permissionRemovedListeners: Array<(permissions: chrome.permissions.Permissions) => void> = [];
   const messageListeners: MessageListener[] = [];
   const startupListeners: Array<() => void> = [];
 
@@ -32,6 +32,9 @@ vi.mock("../../src/background/repository", () => ({
 
 vi.mock("../../src/background/site-access", () => ({
   createChromeSiteAccessAdapter: vi.fn(),
+  originFromMatch(match: string) {
+    return match === "https://example.test/*" ? "https://example.test" : undefined;
+  },
   SiteAccessService: class {
     reconcile = lifecycle.reconcile;
   },
@@ -54,7 +57,7 @@ beforeEach(() => {
     value: {
       permissions: {
         onRemoved: {
-          addListener(listener: () => void) {
+          addListener(listener: (permissions: chrome.permissions.Permissions) => void) {
             lifecycle.permissionRemovedListeners.push(listener);
           },
         },
@@ -115,7 +118,7 @@ describe("background entrypoint lifecycle", () => {
 
     for (const listener of lifecycle.startupListeners) listener();
     for (const listener of lifecycle.installedListeners) listener();
-    for (const listener of lifecycle.permissionRemovedListeners) listener();
+    for (const listener of lifecycle.permissionRemovedListeners) listener({ origins: [] });
     await Promise.resolve();
     await Promise.resolve();
 

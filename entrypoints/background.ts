@@ -2,9 +2,9 @@ import { defineBackground } from "wxt/utils/define-background";
 
 import { BackgroundCoordinator, createChromeTabResolver, type ContentSender } from "../src/background/coordinator";
 import { OverlayRepository } from "../src/background/repository";
-import { createChromeSiteAccessAdapter, SiteAccessService } from "../src/background/site-access";
+import { createChromeSiteAccessAdapter, originFromMatch, SiteAccessService } from "../src/background/site-access";
 import { createChromeStorageAdapter } from "../src/background/storage-adapter";
-import { createChromeTabMessageAdapter, TabMessenger } from "../src/background/tab-messenger";
+import { createChromeTabMessageAdapter, sameCanonicalPage, TabMessenger } from "../src/background/tab-messenger";
 import { AppError, type DeliveryError, publicError, type Result } from "../src/shared/contracts";
 import { parseContentEvent, parsePopupRequest } from "../src/shared/parse";
 
@@ -24,21 +24,17 @@ export default defineBackground(() => {
   const siteAccess = new SiteAccessService(createChromeSiteAccessAdapter(), repository);
   const tabs = createChromeTabResolver();
   const messenger = new TabMessenger(createChromeTabMessageAdapter(), {
-    async inject(tabId): Promise<Result<void, DeliveryError>> {
+    async inject(tabId, expectedUrl): Promise<Result<void, DeliveryError>> {
       const tab = await tabs.getTab(tabId);
-      if (tab === null) return { ok: false, error: new AppError("content-unavailable") };
-      let url: URL;
-      try {
-        url = new URL(tab.url);
-      } catch {
+      if (tab === null || !sameCanonicalPage(tab.url, expectedUrl.toString())) {
         return { ok: false, error: new AppError("content-unavailable") };
       }
-      const injected = await siteAccess.injectForUrl(url, tabId);
+      const injected = await siteAccess.injectForUrl(expectedUrl, tabId);
       return injected.ok
         ? { ok: true, value: undefined }
         : { ok: false, error: new AppError("content-unavailable", { cause: injected.error }) };
     },
-  });
+  }, tabs);
   const coordinator = new BackgroundCoordinator({ repository, siteAccess, tabs, messenger });
 
   const startup = (): void => {
@@ -47,7 +43,13 @@ export default defineBackground(() => {
 
   chrome.runtime.onStartup.addListener(startup);
   chrome.runtime.onInstalled.addListener(startup);
-  chrome.permissions.onRemoved.addListener(startup);
+  chrome.permissions.onRemoved.addListener((permissions) => {
+    const removedOrigins = (permissions.origins ?? []).flatMap((match) => {
+      const origin = originFromMatch(match);
+      return origin === undefined ? [] : [origin];
+    });
+    void coordinator.handlePermissionsRemoved(removedOrigins);
+  });
   chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
     if (sender.tab !== undefined) {
       const contentSender = contentSenderFrom(sender);

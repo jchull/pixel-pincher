@@ -49,10 +49,12 @@ function originMatch(origin: Origin): string {
   return `${origin}/*`;
 }
 
-function originFromMatch(value: string): Origin | undefined {
+export function originFromMatch(value: string): Origin | undefined {
   if (!value.endsWith("/*")) return undefined;
   try {
-    const origin = deriveOrigin(new URL(value.slice(0, -2)));
+    const url = new URL(value.slice(0, -2));
+    if (url.hostname === "*") return undefined;
+    const origin = deriveOrigin(url);
     return origin !== undefined && originMatch(origin) === value ? origin : undefined;
   } catch {
     return undefined;
