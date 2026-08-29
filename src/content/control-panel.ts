@@ -352,11 +352,43 @@ function directionDelta(direction: MoveDirection): PanelPosition { switch (direc
 function isMoveDirection(value: string | undefined): value is MoveDirection { return value === "up" || value === "down" || value === "left" || value === "right"; }
 function preventDefault(event: Event): void { event.preventDefault(); }
 
+function dataUrlFor(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("Unable to read image."));
+    reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Invalid image URL."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function decodeContentImage(bytes: Uint8Array, mimeType: string): Promise<Readonly<{ width: number; height: number }>> {
+  const copy = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(copy).set(bytes);
+  const blob = new Blob([copy], { type: mimeType });
+  try {
+    const bitmap = await createImageBitmap(blob);
+    try {
+      return { width: bitmap.width, height: bitmap.height };
+    } finally {
+      bitmap.close();
+    }
+  } catch {
+    const image = new Image();
+    const dataUrl = await dataUrlFor(blob);
+    const loaded = await new Promise<HTMLImageElement>((resolve, reject) => {
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("Image decoding failed."));
+      image.src = dataUrl;
+    });
+    return { width: loaded.naturalWidth, height: loaded.naturalHeight };
+  }
+}
+
 /** Browser adapters for the existing pure import service; no unvalidated file crosses runtime messaging. */
 export function createContentImporter(): Importer {
   const deps: ImportDependencies = {
     async readFile(file) { if (!(file instanceof File)) throw new Error("Expected File."); return new Uint8Array(await file.arrayBuffer()); },
-    async decodeImage(bytes, mimeType) { const copy = new ArrayBuffer(bytes.byteLength); new Uint8Array(copy).set(bytes); const url = URL.createObjectURL(new Blob([copy], { type: mimeType })); try { const image = new Image(); const loaded = await new Promise<HTMLImageElement>((resolve, reject) => { image.onload = () => resolve(image); image.onerror = () => reject(new Error("decode")); image.src = url; }); return { width: loaded.naturalWidth, height: loaded.naturalHeight }; } finally { URL.revokeObjectURL(url); } },
+    decodeImage: decodeContentImage,
     randomReferenceId() { return crypto.randomUUID(); }, currentTimestamp() { return Date.now(); },
   };
   const importer = createImportReference(deps);
