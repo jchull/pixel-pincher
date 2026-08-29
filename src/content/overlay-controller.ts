@@ -311,6 +311,18 @@ function findOrCreateHost(document: Document): HTMLElement {
   existing?.remove();
   const host = document.createElement("pixel-pincher-overlay");
   host.id = HOST_ID;
+  Object.assign(host.style, {
+    position: "fixed",
+    top: "0",
+    left: "0",
+    zIndex: "2147483647",
+    width: "0",
+    height: "0",
+    margin: "0",
+    padding: "0",
+    pointerEvents: "none",
+    overflow: "visible",
+  });
   document.documentElement.append(host);
   return host;
 }

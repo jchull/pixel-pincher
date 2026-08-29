@@ -124,6 +124,9 @@ describe("OverlayController", () => {
     paint();
     const overlay = image();
     expect(document.querySelectorAll("#pixel-pincher-overlay")).toHaveLength(1);
+    const host = document.querySelector<HTMLElement>("#pixel-pincher-overlay");
+    expect(host?.style.cssText).toContain("top: 0px");
+    expect(host?.style.cssText).toContain("left: 0px");
     expect(
       document.querySelector("#pixel-pincher-overlay")?.shadowRoot,
     ).toBeNull();

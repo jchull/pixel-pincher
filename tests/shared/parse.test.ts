@@ -109,6 +109,15 @@ describe("boundary parsers", () => {
     expect(parseImageRecordV1({ schemaVersion: 1, referenceId: id, dataUrl: oversizedDataUrl }).ok).toBe(false);
   });
 
+  it("validates multi-megabyte base64 payloads without recursive regex matching", () => {
+    const payload = "AAAA".repeat(512 * 1024);
+    const largeDataUrl = `data:image/png;base64,${payload}`;
+    expect(parseImportedReference({
+      metadata: { ...metadata, encodedBytes: new TextEncoder().encode(largeDataUrl).byteLength },
+      dataUrl: largeDataUrl,
+    })).toEqual({ ok: true, value: expect.objectContaining({ dataUrl: largeDataUrl }) });
+  });
+
   it("rejects data URLs with trailing line terminators or any unmatched suffix", () => {
     for (const suffix of ["\n", "\r\n", "\r", " ", "\n\n", ";", "A"]) {
       expect(parseImageRecordV1({ schemaVersion: 1, referenceId: id, dataUrl: dataUrl + suffix }).ok, `record [${suffix}]`).toBe(false);

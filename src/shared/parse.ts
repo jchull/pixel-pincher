@@ -44,7 +44,6 @@ const MIME_TYPES = new Set<string>([
   "image/svg+xml",
 ]);
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 type UnknownRecord = Record<string, unknown>;
 type ParseErrorCode = "invalid-request" | "invalid-stored-data";
@@ -227,16 +226,33 @@ export function parseReferenceMetadata(value: unknown): Result<ReferenceMetadata
   return parseMetadataValue(value, "invalid-request");
 }
 
+function isBase64Payload(value: string): boolean {
+  if (value.length === 0 || value.length % 4 !== 0) return false;
+  const paddingStart = value.indexOf("=");
+  const contentEnd = paddingStart === -1 ? value.length : paddingStart;
+  const paddingLength = value.length - contentEnd;
+  if (paddingLength > 2 || (paddingLength !== 0 && contentEnd + paddingLength !== value.length)) return false;
+  if (paddingLength === 1 && value.at(-1) !== "=") return false;
+  if (paddingLength === 2 && !value.endsWith("==")) return false;
+  for (let index = 0; index < contentEnd; index += 1) {
+    const code = value.charCodeAt(index);
+    const isLetter = code >= 65 && code <= 90 || code >= 97 && code <= 122;
+    const isDigit = code >= 48 && code <= 57;
+    if (!isLetter && !isDigit && code !== 43 && code !== 47) return false;
+  }
+  return true;
+}
+
 function parseDataUrl(value: unknown, code: ParseErrorCode, expectedMimeType?: MimeType, expectedBytes?: number): Result<string, PublicError> {
   const dataUrl = readString(value);
   if (dataUrl === undefined || utf8ByteLength(dataUrl) > MAX_IMAGE_ENCODED_BYTES) return failure(code);
-  const match = /^data:(image\/png|image\/jpeg|image\/webp|image\/svg\+xml);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
-  // The exact-match check rejects any unmatched suffix (e.g. a trailing line
-  // terminator) so the returned value is always the full validated input.
-  if (match === null || match[0] !== dataUrl) return failure(code);
-  const mimeType = match[1];
-  const payload = match[2];
-  if (!isMimeType(mimeType) || (expectedMimeType !== undefined && mimeType !== expectedMimeType) || !BASE64.test(payload)) return failure(code);
+  const separator = ";base64,";
+  if (!dataUrl.startsWith("data:")) return failure(code);
+  const separatorIndex = dataUrl.indexOf(separator, "data:".length);
+  if (separatorIndex === -1 || dataUrl.indexOf(separator, separatorIndex + separator.length) !== -1) return failure(code);
+  const mimeType = dataUrl.slice("data:".length, separatorIndex);
+  const payload = dataUrl.slice(separatorIndex + separator.length);
+  if (!isMimeType(mimeType) || (expectedMimeType !== undefined && mimeType !== expectedMimeType) || !isBase64Payload(payload)) return failure(code);
   const encodedBytes = utf8ByteLength(dataUrl);
   if (expectedBytes !== undefined && encodedBytes !== expectedBytes) return failure(code);
   return { ok: true, value: dataUrl };

@@ -23,7 +23,7 @@
 }
 
 body {
-  width: min(360px, 100vw);
+  width: min(720px, 100vw);
   margin: 0;
   color: var(--color-text);
   background: #fff;
