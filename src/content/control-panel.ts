@@ -225,17 +225,33 @@ export class ControlPanel {
       const imported = await this.#importReference?.(file);
       if (imported === undefined) return;
       if (!imported.ok) {
-        this.#showError(imported.error);
+        console.error("[Pixel Pincher] Reference import failed.", {
+          code: imported.error.code,
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: file.type,
+        });
+        this.#showError({
+          ...imported.error,
+          message: `${imported.error.message} See the page console for details.`,
+        });
         return;
       }
       await this.#send({
         kind: "replace-reference",
         reference: imported.value,
       });
-    } catch {
+    } catch (error) {
+      console.error("[Pixel Pincher] Reference import threw unexpectedly.", {
+        error,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+      });
       this.#showError({
         code: "image-decode-failed",
-        message: "Pixel Pincher could not decode that image.",
+        message:
+          "Pixel Pincher could not decode that image. See the page console for details.",
       });
     } finally {
       this.#elements.file.value = "";
@@ -780,8 +796,12 @@ async function decodeContentImage(
     } finally {
       decoder.close();
     }
-  } catch {
-    // ImageDecoder does not support SVG in Chromium; createImageBitmap covers it.
+  } catch (error) {
+    console.error("[Pixel Pincher] ImageDecoder could not decode the image.", {
+      error,
+      mimeType,
+      size: bytes.byteLength,
+    });
   }
   try {
     const bitmap = await createImageBitmap(blob);
@@ -790,7 +810,12 @@ async function decodeContentImage(
     } finally {
       bitmap.close();
     }
-  } catch {
+  } catch (error) {
+    console.error("[Pixel Pincher] createImageBitmap could not decode the image.", {
+      error,
+      mimeType,
+      size: bytes.byteLength,
+    });
     const image = new Image();
     const dataUrl = await dataUrlFor(blob);
     const loaded = await new Promise<HTMLImageElement>((resolve, reject) => {
