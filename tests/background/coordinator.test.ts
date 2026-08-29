@@ -81,6 +81,10 @@ function createCoordinator(input: Readonly<{ currentSnapshot?: OverlaySnapshot; 
       currentSnapshot = { ...currentSnapshot, revision: currentSnapshot.revision + 1, settings: { ...currentSnapshot.settings, placement } };
       return { ok: true as const, value: currentSnapshot };
     }),
+    updatePanelPosition: vi.fn().mockImplementation(async ({ panelPosition }: { panelPosition: { x: number; y: number } }) => {
+      currentSnapshot = { ...currentSnapshot, revision: currentSnapshot.revision + 1, panelPosition };
+      return { ok: true as const, value: currentSnapshot };
+    }),
     updateSettings: vi.fn().mockImplementation(async ({ patch }: { patch: SettingsPatch }) => {
       const settings = (() => {
         switch (patch.kind) {
@@ -236,6 +240,26 @@ describe("BackgroundCoordinator", () => {
     await expect(harness.coordinator.handlePopup({ kind: "get-tab-state", requestId: "stale" })).resolves.toMatchObject({ value: { diagnostic: null } });
     await harness.coordinator.handleContent({ kind: "image-load-failed", url: pageUrl, referenceId: imported.metadata.id }, { tabId: 9, frameId: 0, url: pageUrl });
     await expect(harness.coordinator.handlePopup({ kind: "get-tab-state", requestId: "mismatch" })).resolves.toMatchObject({ value: { diagnostic: null } });
+  });
+
+  it("accepts correlated panel-position requests only from the current top-frame sender", async () => {
+    const harness = createCoordinator();
+    const response = await harness.coordinator.handlePanelRequest(
+      { kind: "update-panel-position", requestId: "panel-1", panelPosition: { x: 25, y: 40 } },
+      { tabId: 9, frameId: 0, url: pageUrl },
+    );
+    expect(response).toMatchObject({ requestId: "panel-1", ok: true, value: { panelPosition: { x: 25, y: 40 } } });
+    expect(harness.repository.updatePanelPosition).toHaveBeenCalledWith({
+      url: new URL(pageUrl),
+      panelPosition: { x: 25, y: 40 },
+    });
+
+    const rejected = await harness.coordinator.handlePanelRequest(
+      { kind: "update-panel-position", requestId: "nested", panelPosition: { x: 1, y: 2 } },
+      { tabId: 9, frameId: 1, url: pageUrl },
+    );
+    expect(rejected).toMatchObject({ requestId: "nested", ok: false, error: { code: "invalid-request" } });
+    expect(harness.repository.updatePanelPosition).toHaveBeenCalledOnce();
   });
 
   it("hydrates only current, enabled content and suppresses repository failures and closed tabs", async () => {

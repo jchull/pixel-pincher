@@ -2,7 +2,7 @@ import { defineContentScript } from "wxt/utils/define-content-script";
 
 import { OverlayController } from "../src/content/overlay-controller";
 import type { ContentEvent } from "../src/shared/contracts";
-import { parseContentRequest } from "../src/shared/parse";
+import { parseContentRequestWithPanelPosition } from "../src/shared/panel-position";
 
 const controllerKey = Symbol.for("pixel-pincher.overlay-controller");
 
@@ -39,7 +39,7 @@ export function startOverlayContent(
   });
   contentWindow[controllerKey] = controller;
   chrome.runtime.onMessage.addListener((message: unknown) => {
-    const request = parseContentRequest(message);
+    const request = parseContentRequestWithPanelPosition(message);
     if (!request.ok) return;
     switch (request.value.kind) {
       case "hydrate-overlay":

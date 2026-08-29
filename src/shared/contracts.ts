@@ -14,6 +14,8 @@ export type InteractionMode = "click-through" | "drag";
 export type MimeType = "image/png" | "image/jpeg" | "image/webp" | "image/svg+xml";
 
 export type Placement = Readonly<{ x: number; y: number }>;
+/** Viewport-relative top-left position for the future in-page control panel. */
+export type PanelPosition = Readonly<{ x: number; y: number }>;
 export type Sizing =
   | Readonly<{ kind: "fit-width"; lastScalePercent: number }>
   | Readonly<{ kind: "scale"; percent: number }>;
@@ -48,6 +50,8 @@ export type OverlaySnapshot = Readonly<{
   pageKey: PageKey;
   settings: OverlaySettings;
   reference: ReferenceMetadata | null;
+  /** Absent until the in-page control panel has been positioned. */
+  panelPosition?: PanelPosition;
 }>;
 
 export type SnapshotWithReference = OverlaySnapshot &
@@ -63,6 +67,8 @@ export type OriginRecordV1 = Readonly<{
   origin: Origin;
   settings: Omit<OverlaySettings, "placement">;
   reference: ReferenceMetadata | null;
+  /** Optional so stored schema-version-1 records created before panel support remain valid. */
+  panelPosition?: PanelPosition;
 }>;
 
 export type PageRecordV1 = Readonly<{
@@ -107,6 +113,18 @@ export type UpdatePlacementInput = Readonly<{
   placement: Placement;
 }>;
 
+export type UpdatePanelPositionInput = Readonly<{
+  url: URL;
+  panelPosition: PanelPosition;
+}>;
+
+/** A top-frame content panel request. Its URL is deliberately bound to the runtime sender. */
+export type ContentPanelRequest = Readonly<{
+  kind: "update-panel-position";
+  requestId: string;
+  panelPosition: PanelPosition;
+}>;
+
 export type PopupRequest =
   | Readonly<{ kind: "get-tab-state"; requestId: string }>
   | Readonly<{ kind: "register-site"; requestId: string; url: string }>
@@ -131,6 +149,9 @@ export type TabState = Readonly<{
 export type PopupResponse<T> =
   | Readonly<{ requestId: string; ok: true; value: T }>
   | Readonly<{ requestId: string; ok: false; error: PublicError }>;
+
+/** Correlated response to a sender-bound content-panel request. */
+export type ContentPanelResponse<T> = PopupResponse<T>;
 
 export type ContentRequest =
   | Readonly<{ kind: "hydrate-overlay"; hydration: Hydration }>
@@ -232,6 +253,8 @@ export const MIN_SCALE_PERCENT = 10;
 export const MAX_SCALE_PERCENT = 400;
 export const MIN_PLACEMENT = -1_000_000;
 export const MAX_PLACEMENT = 1_000_000;
+export const MIN_PANEL_POSITION = 0;
+export const MAX_PANEL_POSITION = 1_000_000;
 
 function deepFreeze<T extends object>(value: T): T {
   Object.freeze(value);

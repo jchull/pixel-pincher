@@ -326,6 +326,7 @@ describe("import-reference", () => {
           return { ok: true as const, value: currentSnapshot };
         }),
         updatePlacement: vi.fn().mockResolvedValue({ ok: true, value: currentSnapshot }),
+        updatePanelPosition: vi.fn().mockResolvedValue({ ok: true, value: currentSnapshot }),
         updateSettings: vi.fn().mockResolvedValue({ ok: true, value: currentSnapshot }),
       };
       const siteAccess = {

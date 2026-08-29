@@ -1,6 +1,8 @@
 import {
   AppError,
   type ContentEvent,
+  type ContentPanelRequest,
+  type ContentPanelResponse,
   type DeliveryError,
   type Hydration,
   type OverlaySnapshot,
@@ -25,7 +27,7 @@ export type ActiveTab = TabPage;
 export type ContentSender = Readonly<{ tabId: number; frameId: number; url: string }>;
 
 type Repository = Pick<OverlayRepository,
-  "cleanupOrphans" | "clearOrigin" | "readHydration" | "readSnapshot" | "replaceReference" | "updatePlacement" | "updateSettings">;
+  "cleanupOrphans" | "clearOrigin" | "readHydration" | "readSnapshot" | "replaceReference" | "updatePanelPosition" | "updatePlacement" | "updateSettings">;
 
 type DeliveryState = Readonly<{
   pageKey: string;
@@ -137,6 +139,7 @@ export class BackgroundCoordinator {
     return this.#runTab(active.id, async () => this.#handlePopupForActive(request, active));
   }
 
+  /** Handles uncorrelated lifecycle and overlay events from content scripts. */
   async handleContent(event: ContentEvent, sender: ContentSender): Promise<void> {
     if (sender.frameId !== 0 || sender.url !== event.url) return;
     const parsed = parseSupportedUrl(event.url);
@@ -181,6 +184,42 @@ export class BackgroundCoordinator {
           return;
         }
       }
+    });
+  }
+
+  /**
+   * Mutates the panel position using only the top-frame sender URL, never a URL supplied by content.
+   * The returned request ID lets a future panel discard stale asynchronous responses.
+   */
+  async handlePanelRequest(
+    request: ContentPanelRequest,
+    sender: ContentSender,
+  ): Promise<ContentPanelResponse<OverlaySnapshot>> {
+    if (sender.frameId !== 0) return failure(request.requestId, new AppError("invalid-request"));
+    const url = parseSupportedUrl(sender.url);
+    if (!url.ok) return failure(request.requestId, new AppError("invalid-request"));
+    const origin = deriveOrigin(url.value);
+    if (origin === undefined) return failure(request.requestId, new AppError("unsupported-url"));
+
+    return this.#runTab(sender.tabId, async () => {
+      if (!await this.#sameTabPage(sender.tabId, sender.url)) {
+        return failure(request.requestId, new AppError("invalid-request"));
+      }
+      const enabled = await this.#siteAccess.has(origin);
+      if (!enabled.ok) return failure(request.requestId, enabled.error);
+      if (!enabled.value) return failure(request.requestId, new AppError("site-access-revoked"));
+      if (!await this.#sameTabPage(sender.tabId, sender.url)) {
+        return failure(request.requestId, new AppError("invalid-request"));
+      }
+      const updated = await this.#repository.updatePanelPosition({
+        url: url.value,
+        panelPosition: request.panelPosition,
+      });
+      if (!updated.ok) return failure(request.requestId, updated.error);
+      if (!await this.#sameTabPage(sender.tabId, sender.url)) {
+        return failure(request.requestId, new AppError("invalid-request"));
+      }
+      return success(request.requestId, updated.value);
     });
   }
 

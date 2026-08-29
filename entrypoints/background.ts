@@ -9,6 +9,7 @@ import { createChromeStorageAdapter } from "../src/background/storage-adapter";
 import { createChromeTabMessageAdapter, sameCanonicalPage, TabMessenger } from "../src/background/tab-messenger";
 import { AppError, type DeliveryError, publicError, type Result } from "../src/shared/contracts";
 import { parseContentEvent, parsePopupRequest } from "../src/shared/parse";
+import { parseContentPanelRequest } from "../src/shared/panel-position";
 
 function contentSenderFrom(sender: chrome.runtime.MessageSender): ContentSender | undefined {
   const tabId = sender.tab?.id;
@@ -69,6 +70,13 @@ export default defineBackground(() => {
       if (event.ok) {
         void coordinator.handleContent(event.value, contentSender);
         return undefined;
+      }
+      const panelRequest = parseContentPanelRequest(message);
+      if (panelRequest.ok) {
+        void coordinator.handlePanelRequest(panelRequest.value, contentSender)
+          .then(sendResponse)
+          .catch(() => sendResponse({ requestId: panelRequest.value.requestId, ok: false, error: publicError("storage-failed") }));
+        return true;
       }
       sendResponse({ requestId: "invalid", ok: false, error: publicError("invalid-request") });
       return undefined;

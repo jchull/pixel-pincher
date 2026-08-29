@@ -15,6 +15,7 @@ import {
   type RepositoryError,
   type Result,
   type SettingsPatch,
+  type UpdatePanelPositionInput,
   type UpdatePlacementInput,
   type UpdateSettingsInput,
 } from "../shared/contracts";
@@ -31,9 +32,9 @@ import {
   parseImageRecordV1,
   parseImportedReference,
   parseOriginIndexV1,
-  parseOriginRecordV1,
   parsePageRecordV1,
 } from "../shared/parse";
+import { parseOriginRecordWithPanelPosition } from "../shared/panel-position";
 import type { StorageAdapter } from "./storage-adapter";
 
 type LoadedState = Readonly<{
@@ -45,6 +46,7 @@ type LoadedState = Readonly<{
 
 export type {
   ReplaceReferenceInput,
+  UpdatePanelPositionInput,
   UpdatePlacementInput,
   UpdateSettingsInput,
 } from "../shared/contracts";
@@ -106,7 +108,14 @@ function snapshot(state: LoadedState): OverlaySnapshot {
     ...(record?.settings ?? DEFAULT_ORIGIN_SETTINGS),
     placement: state.pageRecord?.placement ?? DEFAULT_SETTINGS.placement,
   };
-  return { revision, origin: state.origin, pageKey: state.pageKey, settings, reference: record?.reference ?? null };
+  return {
+    revision,
+    origin: state.origin,
+    pageKey: state.pageKey,
+    settings,
+    reference: record?.reference ?? null,
+    ...(record?.panelPosition === undefined ? {} : { panelPosition: record.panelPosition }),
+  };
 }
 
 /** Persistent per-origin repository. Every mutation for one origin is serialized. */
@@ -170,7 +179,16 @@ export class OverlayRepository {
       const next = patchSettings(before.settings, patch);
       if (JSON.stringify(before.settings) === JSON.stringify(next)) return before;
       const revision = nextRevision(before.revision);
-      const origin: OriginRecordV1 = { schemaVersion: 1, revision, origin: state.origin, settings: originSettings(next), reference: before.reference };
+      const origin: OriginRecordV1 = {
+        schemaVersion: 1,
+        revision,
+        origin: state.origin,
+        settings: originSettings(next),
+        reference: before.reference,
+        ...(state.originRecord?.panelPosition === undefined
+          ? {}
+          : { panelPosition: state.originRecord.panelPosition }),
+      };
       const values: Record<string, unknown> = { [originRecordKey(state.origin)]: origin };
       if (patch.kind === "placement") {
         const page: PageRecordV1 = { schemaVersion: 1, revision, origin: state.origin, pageKey: state.pageKey, placement: patch.placement };
@@ -183,6 +201,27 @@ export class OverlayRepository {
 
   async updatePlacement(input: UpdatePlacementInput): Promise<Result<OverlaySnapshot, RepositoryError>> {
     return this.updateSettings({ url: input.url, patch: { kind: "placement", placement: input.placement } });
+  }
+
+  /** Persists only origin-scoped panel coordinates; image and page records are never written. */
+  async updatePanelPosition(input: UpdatePanelPositionInput): Promise<Result<OverlaySnapshot, RepositoryError>> {
+    return this.#mutate(input.url, async (state) => {
+      const before = snapshot(state);
+      if (before.panelPosition?.x === input.panelPosition.x && before.panelPosition?.y === input.panelPosition.y) {
+        return before;
+      }
+      const revision = nextRevision(before.revision);
+      const origin: OriginRecordV1 = {
+        schemaVersion: 1,
+        revision,
+        origin: state.origin,
+        settings: originSettings(before.settings),
+        reference: before.reference,
+        panelPosition: input.panelPosition,
+      };
+      await this.#writeWithIndex(state.origin, { [originRecordKey(state.origin)]: origin });
+      return { ...before, revision, panelPosition: input.panelPosition };
+    });
   }
 
   async replaceReference(input: ReplaceReferenceInput): Promise<Result<OverlaySnapshot, RepositoryError>> {
@@ -228,7 +267,16 @@ export class OverlayRepository {
         }
 
         const revision = nextRevision(before.revision);
-        const origin: OriginRecordV1 = { schemaVersion: 1, revision, origin: state.origin, settings: originSettings(before.settings), reference: reference.metadata };
+        const origin: OriginRecordV1 = {
+          schemaVersion: 1,
+          revision,
+          origin: state.origin,
+          settings: originSettings(before.settings),
+          reference: reference.metadata,
+          ...(state.originRecord?.panelPosition === undefined
+            ? {}
+            : { panelPosition: state.originRecord.panelPosition }),
+        };
         await this.#writeWithIndex(state.origin, { [originRecordKey(state.origin)]: origin });
         if (before.reference !== null) {
           try { await this.#adapter.remove([imageRecordKey(before.reference.id)]); } catch { /* replacement is committed */ }
@@ -248,14 +296,14 @@ export class OverlayRepository {
       try {
         const allValues = await this.#adapter.readAll();
         const targetValue = allValues[originRecordKey(origin)];
-        const targetRecord = targetValue === undefined ? null : parseOriginRecordV1(targetValue);
+        const targetRecord = targetValue === undefined ? null : parseOriginRecordWithPanelPosition(targetValue);
         const remainingOrigins = new Set<Origin>();
         let targetReferenceId: ReferenceMetadata["id"] | undefined;
         let duplicateReferenceOwner = false;
 
         for (const [key, value] of Object.entries(allValues)) {
           if (!key.startsWith("pixel-pincher:origin:")) continue;
-          const record = parseOriginRecordV1(value);
+          const record = parseOriginRecordWithPanelPosition(value);
           if (!record.ok || key !== originRecordKey(record.value.origin)) continue;
           if (record.value.origin === origin) {
             if (record.value.reference !== null) targetReferenceId = record.value.reference.id;
@@ -271,7 +319,7 @@ export class OverlayRepository {
           targetReferenceId = targetRecord.value.reference.id;
           for (const [key, value] of Object.entries(allValues)) {
             if (!key.startsWith("pixel-pincher:origin:")) continue;
-            const record = parseOriginRecordV1(value);
+            const record = parseOriginRecordWithPanelPosition(value);
             if (record.ok && record.value.origin !== origin && record.value.reference?.id === targetReferenceId) {
               duplicateReferenceOwner = true;
             }
@@ -301,12 +349,12 @@ export class OverlayRepository {
         const actualOrigins: Origin[] = [];
         for (const [key, value] of Object.entries(values)) {
           if (!key.startsWith("pixel-pincher:origin:")) continue;
-          const record = parseOriginRecordV1(value);
+          const record = parseOriginRecordWithPanelPosition(value);
           if (!record.ok || key !== originRecordKey(record.value.origin)) return invalidStoredData();
           actualOrigins.push(record.value.origin);
         }
         for (const origin of storedIndex.value.origins) {
-          const record = parseOriginRecordV1(values[originRecordKey(origin)]);
+          const record = parseOriginRecordWithPanelPosition(values[originRecordKey(origin)]);
           if (!record.ok || record.value.origin !== origin) return invalidStoredData();
         }
         const indexedOrigins = [...storedIndex.value.origins].sort();
@@ -339,7 +387,7 @@ export class OverlayRepository {
       const imageOwners = new Map<string, Origin>();
       for (const [key, value] of Object.entries(values)) {
         if (!key.startsWith("pixel-pincher:origin:")) continue;
-        const record = parseOriginRecordV1(value);
+        const record = parseOriginRecordWithPanelPosition(value);
         if (!record.ok || key !== originRecordKey(record.value.origin)) return invalidStoredData();
         origins.add(record.value.origin);
         if (record.value.reference !== null) {
@@ -378,7 +426,7 @@ export class OverlayRepository {
     const pageKeyName = pageRecordKey(pageKey);
     try {
       const values = await this.#adapter.get([originKey, pageKeyName]);
-      const originRecord = values[originKey] === undefined ? null : parseOriginRecordV1(values[originKey]);
+      const originRecord = values[originKey] === undefined ? null : parseOriginRecordWithPanelPosition(values[originKey]);
       const pageRecord = values[pageKeyName] === undefined ? null : parsePageRecordV1(values[pageKeyName]);
       if ((originRecord !== null && !originRecord.ok) || (pageRecord !== null && !pageRecord.ok)) return invalidStoredData();
       if ((originRecord !== null && originRecord.value.origin !== origin) || (pageRecord !== null && (pageRecord.value.origin !== origin || pageRecord.value.pageKey !== pageKey))) return invalidStoredData();
@@ -436,7 +484,7 @@ export class OverlayRepository {
     const values = await this.#adapter.readAll();
     for (const [key, value] of Object.entries(values)) {
       if (!key.startsWith("pixel-pincher:origin:")) continue;
-      const record = parseOriginRecordV1(value);
+      const record = parseOriginRecordWithPanelPosition(value);
       if (!record.ok || key !== originRecordKey(record.value.origin)) {
         throw new AppError("invalid-stored-data");
       }
@@ -451,7 +499,7 @@ export class OverlayRepository {
     let owners = 0;
     for (const [key, value] of Object.entries(values)) {
       if (!key.startsWith("pixel-pincher:origin:")) continue;
-      const record = parseOriginRecordV1(value);
+      const record = parseOriginRecordWithPanelPosition(value);
       if (!record.ok || key !== originRecordKey(record.value.origin)) {
         throw new AppError("invalid-stored-data");
       }

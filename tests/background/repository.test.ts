@@ -114,6 +114,22 @@ describe("OverlayRepository", () => {
     expect(touchedKeys.some((key) => key.includes(":image:"))).toBe(false);
   });
 
+  it("persists panel position only in the origin record and advances its revision", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    expect((await repository.updatePlacement({ url, placement: { x: 4, y: -5 } })).ok).toBe(true);
+    storage.resetCalls();
+
+    const updated = await repository.updatePanelPosition({ url, panelPosition: { x: 12, y: 34 } });
+    expect(updated).toMatchObject({ ok: true, value: { revision: 2, panelPosition: { x: 12, y: 34 } } });
+    const origin = deriveOrigin(url);
+    if (origin === undefined) throw new Error("Known HTTPS URL must derive an origin.");
+    expect(storage.values[originRecordKey(origin)]).toMatchObject({ revision: 2, panelPosition: { x: 12, y: 34 } });
+    const writtenKeys = storage.writes.flatMap((write) => Object.keys(write));
+    expect(writtenKeys.some((key) => key.includes(":image:") || key.includes(":page:"))).toBe(false);
+    expect(await repository.readSnapshot(url)).toMatchObject({ ok: true, value: { panelPosition: { x: 12, y: 34 } } });
+  });
+
   it("hydrates validated image data only after a reference exists and advances revisions", async () => {
     const storage = new MemoryStorage();
     const repository = new OverlayRepository(storage);
