@@ -23,7 +23,7 @@
 }
 
 body {
-  width: min(720px, 100vw);
+  width: min(300px, 100vw);
   margin: 0;
   color: var(--color-text);
   background: linear-gradient(145deg, rgb(15 23 42 / 97%), rgb(30 41 59 / 97%));
