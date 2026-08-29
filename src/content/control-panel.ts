@@ -1,6 +1,9 @@
 import controlPanelStyles from "./control-panel.css?inline";
 
-import { createImportReference, type ImportDependencies } from "../popup/import-reference";
+import {
+  createImportReference,
+  type ImportDependencies,
+} from "../popup/import-reference";
 import {
   MAX_PLACEMENT,
   MAX_SCALE_PERCENT,
@@ -30,7 +33,9 @@ type PanelRequest =
   | Readonly<{ kind: "update-settings"; patch: SettingsPatch }>
   | Readonly<{ kind: "clear-site" }>
   | Readonly<{ kind: "update-panel-position"; panelPosition: PanelPosition }>;
-type Importer = (file: File) => Promise<
+type Importer = (
+  file: File,
+) => Promise<
   | Readonly<{ ok: true; value: ImportedReference }>
   | Readonly<{ ok: false; error: PublicError }>
 >;
@@ -45,7 +50,12 @@ export type ControlPanelOptions = Readonly<{
   importReference?: Importer;
 }>;
 
-type DragState = Readonly<{ pointerId: number; clientX: number; clientY: number; position: PanelPosition }>;
+type DragState = Readonly<{
+  pointerId: number;
+  clientX: number;
+  clientY: number;
+  position: PanelPosition;
+}>;
 type MoveDirection = "up" | "down" | "left" | "right";
 type PendingSetting = Readonly<{ patch: SettingsPatch; coalesce: boolean }>;
 
@@ -54,6 +64,7 @@ type PanelElements = Readonly<{
   reference: HTMLElement;
   live: HTMLElement;
   file: HTMLInputElement;
+  toggleVisibility: HTMLButtonElement;
   visible: HTMLInputElement;
   opacity: HTMLInputElement;
   opacityOutput: HTMLOutputElement;
@@ -99,9 +110,13 @@ export class ControlPanel {
     e.handle.addEventListener("pointermove", this.#handlePointerMove);
     e.handle.addEventListener("pointerup", this.#handlePointerUp);
     e.handle.addEventListener("pointercancel", this.#handlePointerCancel);
-    e.handle.addEventListener("lostpointercapture", this.#handleLostPointerCapture);
+    e.handle.addEventListener(
+      "lostpointercapture",
+      this.#handleLostPointerCapture,
+    );
     e.handle.addEventListener("dragstart", preventDefault);
     e.file.addEventListener("change", this.#handleFile);
+    e.toggleVisibility.addEventListener("click", this.#handleToggleVisibility);
     e.visible.addEventListener("change", this.#handleVisibility);
     e.opacity.addEventListener("input", this.#handleOpacity);
     e.fitWidth.addEventListener("change", this.#handleFitWidth);
@@ -116,13 +131,16 @@ export class ControlPanel {
     e.x.addEventListener("keydown", this.#handleNumberKey);
     e.y.addEventListener("keydown", this.#handleNumberKey);
     e.clear.addEventListener("click", this.#toggleClear);
-    for (const button of e.moves) button.addEventListener("click", this.#handleMoveButton);
+    for (const button of e.moves)
+      button.addEventListener("click", this.#handleMoveButton);
     this.#window.addEventListener("resize", this.#handleResize);
     this.#window.addEventListener("keydown", this.#handleKeyDown);
     this.#host.style.display = "none";
   }
 
-  hydrate(hydration: Hydration): void { this.apply(hydration.snapshot); }
+  hydrate(hydration: Hydration): void {
+    this.apply(hydration.snapshot);
+  }
 
   apply(snapshot: OverlaySnapshot): void {
     if (this.#destroyed || snapshot.revision < this.#revision) return;
@@ -156,14 +174,24 @@ export class ControlPanel {
     this.#host.style.left = `${this.#position.x}px`;
     this.#host.style.top = `${this.#position.y}px`;
     const reference = snapshot.reference;
-    e.reference.textContent = reference === null ? "No reference image selected." : `${reference.name} · ${reference.width} × ${reference.height}`;
+    e.reference.textContent =
+      reference === null
+        ? "No reference image selected."
+        : `${reference.name} · ${reference.width} × ${reference.height}`;
     e.reference.classList.toggle("none", reference === null);
     const settings = snapshot.settings;
     const disabled = reference === null;
     e.file.disabled = false;
+    e.toggleVisibility.disabled = disabled;
+    e.toggleVisibility.textContent = settings.visible ? "Hide overlay" : "Show overlay";
     e.visible.checked = settings.visible;
-    const visibility = this.#host ? roots.get(this.#host)?.querySelector<HTMLElement>(".visibility") : null;
-    if (visibility !== null && visibility !== undefined) visibility.textContent = settings.visible ? "Overlay visible" : "Overlay hidden";
+    const visibility = this.#host
+      ? roots.get(this.#host)?.querySelector<HTMLElement>(".visibility")
+      : null;
+    if (visibility !== null && visibility !== undefined)
+      visibility.textContent = settings.visible
+        ? "Overlay visible"
+        : "Overlay hidden";
     e.opacity.value = String(Math.round(settings.opacity * 100));
     e.opacityOutput.value = `${e.opacity.value}%`;
     e.fitWidth.checked = settings.sizing.kind === "fit-width";
@@ -177,10 +205,22 @@ export class ControlPanel {
     e.drag.checked = settings.interactionMode === "drag";
     e.x.value = String(settings.placement.x);
     e.y.value = String(settings.placement.y);
-    for (const control of [e.visible, e.opacity, e.fitWidth, e.inverted, e.clickThrough, e.drag, e.x, e.y]) control.disabled = disabled;
+    for (const control of [
+      e.visible,
+      e.opacity,
+      e.fitWidth,
+      e.inverted,
+      e.clickThrough,
+      e.drag,
+      e.x,
+      e.y,
+    ])
+      control.disabled = disabled;
     e.clear.disabled = reference === null;
     e.confirm.hidden = !this.#confirmingClear;
-    e.clear.textContent = this.#confirmingClear ? "Confirm clear site data" : "Clear site data";
+    e.clear.textContent = this.#confirmingClear
+      ? "Confirm clear site data"
+      : "Clear site data";
   }
 
   #handleFile = (): void => {
@@ -193,13 +233,34 @@ export class ControlPanel {
     try {
       const imported = await this.#importReference?.(file);
       if (imported === undefined) return;
-      if (!imported.ok) { this.#showError(imported.error); return; }
-      await this.#send({ kind: "replace-reference", reference: imported.value });
-    } catch { this.#showError({ code: "image-decode-failed", message: "Pixel Pincher could not decode that image." }); }
-    finally { this.#elements.file.value = ""; }
+      if (!imported.ok) {
+        this.#showError(imported.error);
+        return;
+      }
+      await this.#send({
+        kind: "replace-reference",
+        reference: imported.value,
+      });
+    } catch {
+      this.#showError({
+        code: "image-decode-failed",
+        message: "Pixel Pincher could not decode that image.",
+      });
+    } finally {
+      this.#elements.file.value = "";
+    }
   }
 
-  #handleVisibility = (): void => this.#queueSetting({ kind: "visibility", visible: this.#elements.visible.checked });
+  #handleToggleVisibility = (): void =>
+    this.#queueSetting({
+      kind: "visibility",
+      visible: !this.#elements.visible.checked,
+    });
+  #handleVisibility = (): void =>
+    this.#queueSetting({
+      kind: "visibility",
+      visible: this.#elements.visible.checked,
+    });
   #handleOpacity = (): void => {
     const value = Number(this.#elements.opacity.value);
     const opacity = Math.min(100, Math.max(0, Math.round(value))) / 100;
@@ -210,14 +271,41 @@ export class ControlPanel {
     const sizing = this.#snapshot?.settings.sizing;
     if (sizing === undefined) return;
     const current = manualScale(sizing);
-    this.#queueSetting({ kind: "sizing", sizing: this.#elements.fitWidth.checked ? { kind: "fit-width", lastScalePercent: current } : { kind: "scale", percent: current } }, true);
+    this.#queueSetting(
+      {
+        kind: "sizing",
+        sizing: this.#elements.fitWidth.checked
+          ? { kind: "fit-width", lastScalePercent: current }
+          : { kind: "scale", percent: current },
+      },
+      true,
+    );
   };
-  #handleScale = (): void => this.#queueSetting({ kind: "sizing", sizing: { kind: "scale", percent: clampScale(Number(this.#elements.scale.value)) } }, true);
-  #handleScaleNumber = (): void => this.#commitNumber(this.#elements.scaleNumber);
-  #handleInversion = (): void => this.#queueSetting({ kind: "inversion", inverted: this.#elements.inverted.checked });
+  #handleScale = (): void =>
+    this.#queueSetting(
+      {
+        kind: "sizing",
+        sizing: {
+          kind: "scale",
+          percent: clampScale(Number(this.#elements.scale.value)),
+        },
+      },
+      true,
+    );
+  #handleScaleNumber = (): void =>
+    this.#commitNumber(this.#elements.scaleNumber);
+  #handleInversion = (): void =>
+    this.#queueSetting({
+      kind: "inversion",
+      inverted: this.#elements.inverted.checked,
+    });
   #handleInteraction = (event: Event): void => {
     const input = event.currentTarget;
-    if (input instanceof HTMLInputElement && input.checked) this.#queueSetting({ kind: "interaction-mode", interactionMode: input.value === "drag" ? "drag" : "click-through" });
+    if (input instanceof HTMLInputElement && input.checked)
+      this.#queueSetting({
+        kind: "interaction-mode",
+        interactionMode: input.value === "drag" ? "drag" : "click-through",
+      });
   };
   #handlePlacement = (event: Event): void => {
     const input = event.currentTarget;
@@ -226,8 +314,12 @@ export class ControlPanel {
   #handleNumberKey = (event: KeyboardEvent): void => {
     const input = event.currentTarget;
     if (!(input instanceof HTMLInputElement)) return;
-    if (event.key === "Enter") { this.#commitNumber(input); return; }
-    const direction = event.key === "ArrowUp" ? 1 : event.key === "ArrowDown" ? -1 : 0;
+    if (event.key === "Enter") {
+      this.#commitNumber(input);
+      return;
+    }
+    const direction =
+      event.key === "ArrowUp" ? 1 : event.key === "ArrowDown" ? -1 : 0;
     if (direction === 0) return;
     event.preventDefault();
     const step = event.shiftKey ? 10 : 1;
@@ -237,21 +329,41 @@ export class ControlPanel {
   };
 
   #commitNumber(input: HTMLInputElement): void {
-    if (!/^-?\d+$/.test(input.value.trim())) { this.#render(); return; }
+    if (!/^-?\d+$/.test(input.value.trim())) {
+      this.#render();
+      return;
+    }
     const value = Number(input.value);
-    if (!Number.isSafeInteger(value)) { this.#render(); return; }
+    if (!Number.isSafeInteger(value)) {
+      this.#render();
+      return;
+    }
     if (input === this.#elements.scaleNumber) {
-      this.#queueSetting({ kind: "sizing", sizing: { kind: "scale", percent: clampScale(value) } }, true);
+      this.#queueSetting(
+        {
+          kind: "sizing",
+          sizing: { kind: "scale", percent: clampScale(value) },
+        },
+        true,
+      );
       return;
     }
     const snapshot = this.#snapshot;
     if (snapshot === undefined) return;
-    const placement = { ...snapshot.settings.placement, [input === this.#elements.x ? "x" : "y"]: clampPlacement(value) };
+    const placement = {
+      ...snapshot.settings.placement,
+      [input === this.#elements.x ? "x" : "y"]: clampPlacement(value),
+    };
     this.#queueSetting({ kind: "placement", placement });
   }
 
   #toggleClear = (): void => {
-    if (!this.#confirmingClear) { this.#confirmingClear = true; this.#elements.confirm.hidden = false; this.#elements.clear.textContent = "Confirm clear site data"; return; }
+    if (!this.#confirmingClear) {
+      this.#confirmingClear = true;
+      this.#elements.confirm.hidden = false;
+      this.#elements.clear.textContent = "Confirm clear site data";
+      return;
+    }
     this.#confirmingClear = false;
     this.#elements.confirm.hidden = true;
     this.#elements.clear.textContent = "Clear site data";
@@ -259,10 +371,15 @@ export class ControlPanel {
   };
 
   #queueSetting(patch: SettingsPatch, coalesce = false): void {
-    if (this.#snapshot?.reference === null || this.#request === undefined) return;
+    if (this.#snapshot?.reference === null || this.#request === undefined)
+      return;
     const pending = { patch, coalesce };
     if (this.#settingsInFlight) {
-      const existing = coalesce ? this.#pendingSettings.findIndex((item) => item.coalesce && item.patch.kind === patch.kind) : -1;
+      const existing = coalesce
+        ? this.#pendingSettings.findIndex(
+            (item) => item.coalesce && item.patch.kind === patch.kind,
+          )
+        : -1;
       if (existing === -1) this.#pendingSettings.push(pending);
       else this.#pendingSettings[existing] = pending;
       return;
@@ -280,88 +397,453 @@ export class ControlPanel {
 
   async #send(request: PanelRequest): Promise<void> {
     if (this.#request === undefined) {
-      if (request.kind === "update-panel-position") this.#onPositionCommitted?.(request.panelPosition);
+      if (request.kind === "update-panel-position")
+        this.#onPositionCommitted?.(request.panelPosition);
       return;
     }
     const requestId = `panel-${this.#nextRequestId++}`;
     try {
-      const parsed = parseContentPanelResponse(await this.#request({ ...request, requestId }));
-      if (!parsed.ok || parsed.value.requestId !== requestId) { this.#showError({ code: "invalid-request", message: "Pixel Pincher received an invalid request." }); return; }
-      if (!parsed.value.ok) { this.#showError(parsed.value.error); return; }
+      const parsed = parseContentPanelResponse(
+        await this.#request({ ...request, requestId }),
+      );
+      if (!parsed.ok || parsed.value.requestId !== requestId) {
+        this.#showError({
+          code: "invalid-request",
+          message: "Pixel Pincher received an invalid request.",
+        });
+        return;
+      }
+      if (!parsed.value.ok) {
+        this.#showError(parsed.value.error);
+        return;
+      }
       if (parsed.value.value !== undefined) this.apply(parsed.value.value);
-    } catch { this.#showError({ code: "content-unavailable", message: "The page overlay is unavailable. Reload the page and try again." }); }
+    } catch {
+      this.#showError({
+        code: "content-unavailable",
+        message:
+          "The page overlay is unavailable. Reload the page and try again.",
+      });
+    }
   }
 
-  #showError(error: PublicError): void { this.#elements.live.textContent = error.message; }
+  #showError(error: PublicError): void {
+    this.#elements.live.textContent = error.message;
+  }
   #handlePointerDown = (event: PointerEvent): void => {
     if (event.button !== 0 || this.#snapshot === undefined) return;
-    this.#dragState = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, position: this.#position };
-    this.#elements.handle.setPointerCapture(event.pointerId); event.preventDefault();
+    this.#dragState = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      position: this.#position,
+    };
+    this.#elements.handle.setPointerCapture(event.pointerId);
+    event.preventDefault();
   };
   #handlePointerMove = (event: PointerEvent): void => {
-    const drag = this.#dragState; if (drag === undefined || drag.pointerId !== event.pointerId) return;
-    this.#position = this.#clamp({ x: drag.position.x + event.clientX - drag.clientX, y: drag.position.y + event.clientY - drag.clientY }); this.#render(); event.preventDefault();
+    const drag = this.#dragState;
+    if (drag === undefined || drag.pointerId !== event.pointerId) return;
+    this.#position = this.#clamp({
+      x: drag.position.x + event.clientX - drag.clientX,
+      y: drag.position.y + event.clientY - drag.clientY,
+    });
+    this.#render();
+    event.preventDefault();
   };
-  #handlePointerUp = (event: PointerEvent): void => { if (this.#dragState?.pointerId === event.pointerId) { this.#handlePointerMove(event); this.#commitDrag(event.pointerId); } };
-  #handlePointerCancel = (event: PointerEvent): void => { if (this.#dragState?.pointerId === event.pointerId) this.#restoreDrag(); };
-  #handleLostPointerCapture = (event: PointerEvent): void => { if (this.#dragState?.pointerId === event.pointerId) this.#commitDrag(event.pointerId); };
-  #handleKeyDown = (event: KeyboardEvent): void => { if (event.key === "Escape" && this.#dragState !== undefined) { this.#restoreDrag(); event.preventDefault(); } };
-  #handleResize = (): void => { if (this.#snapshot !== undefined) { this.#position = this.#clamp(this.#position); this.#render(); } };
+  #handlePointerUp = (event: PointerEvent): void => {
+    if (this.#dragState?.pointerId === event.pointerId) {
+      this.#handlePointerMove(event);
+      this.#commitDrag(event.pointerId);
+    }
+  };
+  #handlePointerCancel = (event: PointerEvent): void => {
+    if (this.#dragState?.pointerId === event.pointerId) this.#restoreDrag();
+  };
+  #handleLostPointerCapture = (event: PointerEvent): void => {
+    if (this.#dragState?.pointerId === event.pointerId)
+      this.#commitDrag(event.pointerId);
+  };
+  #handleKeyDown = (event: KeyboardEvent): void => {
+    if (event.key === "Escape" && this.#dragState !== undefined) {
+      this.#restoreDrag();
+      event.preventDefault();
+    }
+  };
+  #handleResize = (): void => {
+    if (this.#snapshot !== undefined) {
+      this.#position = this.#clamp(this.#position);
+      this.#render();
+    }
+  };
   #handleMoveButton = (event: Event): void => {
-    const button = event.currentTarget; if (!(button instanceof HTMLButtonElement) || !isMoveDirection(button.dataset.direction)) return;
-    const delta = directionDelta(button.dataset.direction); this.#position = this.#clamp({ x: this.#position.x + delta.x, y: this.#position.y + delta.y }); this.#render(); this.#commitPosition();
+    const button = event.currentTarget;
+    if (
+      !(button instanceof HTMLButtonElement) ||
+      !isMoveDirection(button.dataset.direction)
+    )
+      return;
+    const delta = directionDelta(button.dataset.direction);
+    this.#position = this.#clamp({
+      x: this.#position.x + delta.x,
+      y: this.#position.y + delta.y,
+    });
+    this.#render();
+    this.#commitPosition();
   };
-  #commitDrag(pointerId: number): void { this.#dragState = undefined; if (this.#elements.handle.hasPointerCapture(pointerId)) this.#elements.handle.releasePointerCapture(pointerId); this.#commitPosition(); }
-  #restoreDrag(): void { const drag = this.#dragState; if (drag === undefined) return; this.#dragState = undefined; this.#position = drag.position; if (this.#elements.handle.hasPointerCapture(drag.pointerId)) this.#elements.handle.releasePointerCapture(drag.pointerId); this.#render(); this.#elements.live.textContent = "Panel move cancelled."; }
-  #cancelDrag(): void { const drag = this.#dragState; this.#dragState = undefined; if (drag !== undefined && this.#elements.handle.hasPointerCapture(drag.pointerId)) this.#elements.handle.releasePointerCapture(drag.pointerId); }
-  #commitPosition(): void { if (this.#request === undefined) this.#onPositionCommitted?.(this.#position); else void this.#send({ kind: "update-panel-position", panelPosition: this.#position }); this.#elements.live.textContent = "Panel position saved."; }
-  #clamp(position: PanelPosition): PanelPosition { const bounds = this.#host.getBoundingClientRect(); const width = Math.max(bounds.width, MIN_REACHABLE_WIDTH); const height = Math.max(bounds.height, MIN_REACHABLE_HEIGHT); return { x: Math.max(0, Math.min(Math.max(0, this.#window.innerWidth - Math.min(width, MIN_REACHABLE_WIDTH)), Math.round(position.x))), y: Math.max(0, Math.min(Math.max(0, this.#window.innerHeight - Math.min(height, MIN_REACHABLE_HEIGHT)), Math.round(position.y))) }; }
+  #commitDrag(pointerId: number): void {
+    this.#dragState = undefined;
+    if (this.#elements.handle.hasPointerCapture(pointerId))
+      this.#elements.handle.releasePointerCapture(pointerId);
+    this.#commitPosition();
+  }
+  #restoreDrag(): void {
+    const drag = this.#dragState;
+    if (drag === undefined) return;
+    this.#dragState = undefined;
+    this.#position = drag.position;
+    if (this.#elements.handle.hasPointerCapture(drag.pointerId))
+      this.#elements.handle.releasePointerCapture(drag.pointerId);
+    this.#render();
+    this.#elements.live.textContent = "Panel move cancelled.";
+  }
+  #cancelDrag(): void {
+    const drag = this.#dragState;
+    this.#dragState = undefined;
+    if (
+      drag !== undefined &&
+      this.#elements.handle.hasPointerCapture(drag.pointerId)
+    )
+      this.#elements.handle.releasePointerCapture(drag.pointerId);
+  }
+  #commitPosition(): void {
+    if (this.#request === undefined)
+      this.#onPositionCommitted?.(this.#position);
+    else
+      void this.#send({
+        kind: "update-panel-position",
+        panelPosition: this.#position,
+      });
+    this.#elements.live.textContent = "Panel position saved.";
+  }
+  #clamp(position: PanelPosition): PanelPosition {
+    const bounds = this.#host.getBoundingClientRect();
+    const width = Math.max(bounds.width, MIN_REACHABLE_WIDTH);
+    const height = Math.max(bounds.height, MIN_REACHABLE_HEIGHT);
+    return {
+      x: Math.max(
+        0,
+        Math.min(
+          Math.max(
+            0,
+            this.#window.innerWidth - Math.min(width, MIN_REACHABLE_WIDTH),
+          ),
+          Math.round(position.x),
+        ),
+      ),
+      y: Math.max(
+        0,
+        Math.min(
+          Math.max(
+            0,
+            this.#window.innerHeight - Math.min(height, MIN_REACHABLE_HEIGHT),
+          ),
+          Math.round(position.y),
+        ),
+      ),
+    };
+  }
 }
 
-function findOrCreateHost(document: Document): HTMLElement { const existing = document.getElementById(HOST_ID); if (existing?.tagName === "PIXEL-PINCHER-CONTROL-PANEL") return existing; existing?.remove(); const host = document.createElement("pixel-pincher-control-panel"); host.id = HOST_ID; document.documentElement.append(host); return host; }
-function rootFor(host: HTMLElement): ShadowRoot { const existing = roots.get(host); if (existing !== undefined) return existing; const root = host.attachShadow({ mode: "closed" }); roots.set(host, root); return root; }
-function findOrCreatePanel(root: ShadowRoot, document: Document): PanelElements {
-  root.replaceChildren(); const style = document.createElement("style"); style.textContent = controlPanelStyles;
-  const panel = document.createElement("section"); panel.className = "panel"; panel.setAttribute("aria-label", "Pixel Pincher control panel");
-  const handle = button(document, "handle", "Drag control panel"); handle.innerHTML = "<span>Pixel Pincher</span><span class=\"grip\" aria-hidden=\"true\">⠿</span>";
-  const content = document.createElement("div"); content.className = "content";
-  const reference = document.createElement("p"); reference.className = "reference";
-  const visibility = document.createElement("p"); visibility.className = "visibility";
-  const file = document.createElement("input"); file.id = "reference-file"; file.type = "file"; file.accept = "image/png,image/jpeg,image/webp,image/svg+xml"; file.setAttribute("aria-label", "Choose or replace reference image");
-  const controls = document.createElement("fieldset"); controls.className = "controls"; const legend = document.createElement("legend"); legend.textContent = "Overlay controls"; controls.append(legend);
-  const visible = checkbox(document, "visible", "Show overlay"); const opacity = range(document, "opacity", 0, 100); const opacityOutput = document.createElement("output"); opacityOutput.htmlFor = "opacity";
-  const fitWidth = checkbox(document, "fit-width", "Fit to viewport width"); const scale = range(document, "scale", MIN_SCALE_PERCENT, MAX_SCALE_PERCENT); const scaleNumber = number(document, "scale-number", MIN_SCALE_PERCENT, MAX_SCALE_PERCENT);
-  const reset = button(document, "reset-scale", "Reset scale to 100%"); reset.addEventListener("click", () => { scale.value = "100"; scaleNumber.value = "100"; scale.dispatchEvent(new Event("input")); });
-  const inverted = checkbox(document, "inverted", "Invert colors"); const clickThrough = radio(document, "interaction-click-through", "interaction", "click-through", "Click-through"); const drag = radio(document, "interaction-drag", "interaction", "drag", "Drag overlay");
-  const x = number(document, "x", MIN_PLACEMENT, MAX_PLACEMENT); const y = number(document, "y", MIN_PLACEMENT, MAX_PLACEMENT);
-  appendLabeled(controls, "Opacity", opacity, opacityOutput); appendLabeled(controls, "Scale", scale); appendLabeled(controls, "Manual scale", scaleNumber); appendLabeled(controls, "X position", x); appendLabeled(controls, "Y position", y); controls.append(visible.parentElement!, fitWidth.parentElement!, reset, inverted.parentElement!, clickThrough.parentElement!, drag.parentElement!);
-  const moves = createMoveControls(document); const clear = button(document, "clear-site", "Clear site data"); const confirm = document.createElement("p"); confirm.textContent = "Click clear again to confirm removing this site’s image and settings."; confirm.hidden = true; const live = document.createElement("p"); live.className = "live"; live.setAttribute("role", "status"); live.setAttribute("aria-live", "polite");
-  content.append(reference, visibility, file, controls, moves.container, clear, confirm, live); panel.append(handle, content); root.append(style, panel); return { handle, reference, live, file, visible, opacity, opacityOutput, fitWidth, scale, scaleNumber, inverted, clickThrough, drag, x, y, clear, confirm, moves: moves.buttons };
+function findOrCreateHost(document: Document): HTMLElement {
+  const existing = document.getElementById(HOST_ID);
+  if (existing?.tagName === "PIXEL-PINCHER-CONTROL-PANEL") return existing;
+  existing?.remove();
+  const host = document.createElement("pixel-pincher-control-panel");
+  host.id = HOST_ID;
+  document.documentElement.append(host);
+  return host;
 }
-function button(document: Document, id: string, label: string): HTMLButtonElement { const element = document.createElement("button"); element.id = id; element.className = id === "handle" ? "handle" : "button"; element.type = "button"; element.textContent = label; element.setAttribute("aria-label", label); return element; }
-function checkbox(document: Document, id: string, label: string): HTMLInputElement { const input = document.createElement("input"); input.id = id; input.type = "checkbox"; const wrapper = document.createElement("label"); wrapper.textContent = label; wrapper.prepend(input); return input; }
-function radio(document: Document, id: string, name: string, value: string, label: string): HTMLInputElement { const input = checkbox(document, id, label); input.type = "radio"; input.name = name; input.value = value; return input; }
-function range(document: Document, id: string, min: number, max: number): HTMLInputElement { const input = document.createElement("input"); input.id = id; input.type = "range"; input.min = String(min); input.max = String(max); return input; }
-function number(document: Document, id: string, min: number, max: number): HTMLInputElement { const input = document.createElement("input"); input.id = id; input.type = "number"; input.min = String(min); input.max = String(max); input.step = "1"; return input; }
-function appendLabeled(parent: HTMLElement, label: string, input: HTMLInputElement, extra?: HTMLElement): void { const wrapper = document.createElement("label"); wrapper.textContent = label; wrapper.append(input); if (extra !== undefined) wrapper.append(extra); parent.append(wrapper); }
-function createMoveControls(document: Document): Readonly<{ container: HTMLElement; buttons: readonly HTMLButtonElement[] }> { const container = document.createElement("div"); container.className = "moves"; const buttons = ([ ["up", "↑"], ["left", "←"], ["down", "↓"], ["right", "→"] ] as const).map(([direction, symbol]) => { const b = button(document, `move-${direction}`, `Move panel ${direction}`); b.className = `move move-${direction}`; b.dataset.direction = direction; b.textContent = symbol; return b; }); container.append(...buttons); return { container, buttons }; }
-function manualScale(sizing: Sizing): number { return sizing.kind === "fit-width" ? sizing.lastScalePercent : sizing.percent; }
-function clampScale(value: number): number { return Math.min(MAX_SCALE_PERCENT, Math.max(MIN_SCALE_PERCENT, Math.round(value))); }
-function clampPlacement(value: number): number { return Math.min(MAX_PLACEMENT, Math.max(MIN_PLACEMENT, Math.round(value))); }
-function directionDelta(direction: MoveDirection): PanelPosition { switch (direction) { case "up": return { x: 0, y: -KEYBOARD_STEP }; case "down": return { x: 0, y: KEYBOARD_STEP }; case "left": return { x: -KEYBOARD_STEP, y: 0 }; case "right": return { x: KEYBOARD_STEP, y: 0 }; } }
-function isMoveDirection(value: string | undefined): value is MoveDirection { return value === "up" || value === "down" || value === "left" || value === "right"; }
-function preventDefault(event: Event): void { event.preventDefault(); }
+function rootFor(host: HTMLElement): ShadowRoot {
+  const existing = roots.get(host);
+  if (existing !== undefined) return existing;
+  const root = host.attachShadow({ mode: "closed" });
+  roots.set(host, root);
+  return root;
+}
+function findOrCreatePanel(
+  root: ShadowRoot,
+  document: Document,
+): PanelElements {
+  root.replaceChildren();
+  const style = document.createElement("style");
+  style.textContent = controlPanelStyles;
+  const panel = document.createElement("section");
+  panel.className = "panel";
+  panel.setAttribute("aria-label", "Pixel Pincher control panel");
+  const handle = button(document, "handle", "Drag control panel");
+  handle.innerHTML =
+    '<span>Pixel Pincher</span><span class="grip" aria-hidden="true">⠿</span>';
+  const content = document.createElement("div");
+  content.className = "content";
+  const reference = document.createElement("p");
+  reference.className = "reference";
+  const visibility = document.createElement("p");
+  visibility.className = "visibility";
+  const file = document.createElement("input");
+  file.id = "reference-file";
+  file.type = "file";
+  file.accept = "image/png,image/jpeg,image/webp,image/svg+xml";
+  file.setAttribute("aria-label", "Choose or replace reference image");
+  const toggleVisibility = button(document, "toggle-visibility", "Hide overlay");
+  const controls = document.createElement("fieldset");
+  controls.className = "controls";
+  const legend = document.createElement("legend");
+  legend.textContent = "Overlay controls";
+  controls.append(legend);
+  const visible = checkbox(document, "visible", "Show overlay");
+  const opacity = range(document, "opacity", 0, 100);
+  const opacityOutput = document.createElement("output");
+  opacityOutput.htmlFor = "opacity";
+  const fitWidth = checkbox(document, "fit-width", "Fit to viewport width");
+  const scale = range(document, "scale", MIN_SCALE_PERCENT, MAX_SCALE_PERCENT);
+  const scaleNumber = number(
+    document,
+    "scale-number",
+    MIN_SCALE_PERCENT,
+    MAX_SCALE_PERCENT,
+  );
+  const reset = button(document, "reset-scale", "Reset scale to 100%");
+  reset.addEventListener("click", () => {
+    scale.value = "100";
+    scaleNumber.value = "100";
+    scale.dispatchEvent(new Event("input"));
+  });
+  const inverted = checkbox(document, "inverted", "Invert colors");
+  const clickThrough = radio(
+    document,
+    "interaction-click-through",
+    "interaction",
+    "click-through",
+    "Click-through",
+  );
+  const drag = radio(
+    document,
+    "interaction-drag",
+    "interaction",
+    "drag",
+    "Drag overlay",
+  );
+  const x = number(document, "x", MIN_PLACEMENT, MAX_PLACEMENT);
+  const y = number(document, "y", MIN_PLACEMENT, MAX_PLACEMENT);
+  appendLabeled(controls, "Opacity", opacity, opacityOutput);
+  appendLabeled(controls, "Scale", scale);
+  appendLabeled(controls, "Manual scale", scaleNumber);
+  appendLabeled(controls, "X position", x);
+  appendLabeled(controls, "Y position", y);
+  controls.append(
+    visible.parentElement!,
+    fitWidth.parentElement!,
+    reset,
+    inverted.parentElement!,
+    clickThrough.parentElement!,
+    drag.parentElement!,
+  );
+  const moves = createMoveControls(document);
+  const clear = button(document, "clear-site", "Clear site data");
+  const confirm = document.createElement("p");
+  confirm.textContent =
+    "Click clear again to confirm removing this site’s image and settings.";
+  confirm.hidden = true;
+  const live = document.createElement("p");
+  live.className = "live";
+  live.setAttribute("role", "status");
+  live.setAttribute("aria-live", "polite");
+  content.append(
+    reference,
+    visibility,
+    toggleVisibility,
+    file,
+    controls,
+    moves.container,
+    clear,
+    confirm,
+    live,
+  );
+  panel.append(handle, content);
+  root.append(style, panel);
+  return {
+    handle,
+    reference,
+    live,
+    file,
+    toggleVisibility,
+    visible,
+    opacity,
+    opacityOutput,
+    fitWidth,
+    scale,
+    scaleNumber,
+    inverted,
+    clickThrough,
+    drag,
+    x,
+    y,
+    clear,
+    confirm,
+    moves: moves.buttons,
+  };
+}
+function button(
+  document: Document,
+  id: string,
+  label: string,
+): HTMLButtonElement {
+  const element = document.createElement("button");
+  element.id = id;
+  element.className = id === "handle" ? "handle" : "button";
+  element.type = "button";
+  element.textContent = label;
+  element.setAttribute("aria-label", label);
+  return element;
+}
+function checkbox(
+  document: Document,
+  id: string,
+  label: string,
+): HTMLInputElement {
+  const input = document.createElement("input");
+  input.id = id;
+  input.type = "checkbox";
+  const wrapper = document.createElement("label");
+  wrapper.textContent = label;
+  wrapper.prepend(input);
+  return input;
+}
+function radio(
+  document: Document,
+  id: string,
+  name: string,
+  value: string,
+  label: string,
+): HTMLInputElement {
+  const input = checkbox(document, id, label);
+  input.type = "radio";
+  input.name = name;
+  input.value = value;
+  return input;
+}
+function range(
+  document: Document,
+  id: string,
+  min: number,
+  max: number,
+): HTMLInputElement {
+  const input = document.createElement("input");
+  input.id = id;
+  input.type = "range";
+  input.min = String(min);
+  input.max = String(max);
+  return input;
+}
+function number(
+  document: Document,
+  id: string,
+  min: number,
+  max: number,
+): HTMLInputElement {
+  const input = document.createElement("input");
+  input.id = id;
+  input.type = "number";
+  input.min = String(min);
+  input.max = String(max);
+  input.step = "1";
+  return input;
+}
+function appendLabeled(
+  parent: HTMLElement,
+  label: string,
+  input: HTMLInputElement,
+  extra?: HTMLElement,
+): void {
+  const wrapper = document.createElement("label");
+  wrapper.textContent = label;
+  wrapper.append(input);
+  if (extra !== undefined) wrapper.append(extra);
+  parent.append(wrapper);
+}
+function createMoveControls(
+  document: Document,
+): Readonly<{ container: HTMLElement; buttons: readonly HTMLButtonElement[] }> {
+  const container = document.createElement("div");
+  container.className = "moves";
+  const buttons = (
+    [
+      ["up", "↑"],
+      ["left", "←"],
+      ["down", "↓"],
+      ["right", "→"],
+    ] as const
+  ).map(([direction, symbol]) => {
+    const b = button(document, `move-${direction}`, `Move panel ${direction}`);
+    b.className = `move move-${direction}`;
+    b.dataset.direction = direction;
+    b.textContent = symbol;
+    return b;
+  });
+  container.append(...buttons);
+  return { container, buttons };
+}
+function manualScale(sizing: Sizing): number {
+  return sizing.kind === "fit-width" ? sizing.lastScalePercent : sizing.percent;
+}
+function clampScale(value: number): number {
+  return Math.min(
+    MAX_SCALE_PERCENT,
+    Math.max(MIN_SCALE_PERCENT, Math.round(value)),
+  );
+}
+function clampPlacement(value: number): number {
+  return Math.min(MAX_PLACEMENT, Math.max(MIN_PLACEMENT, Math.round(value)));
+}
+function directionDelta(direction: MoveDirection): PanelPosition {
+  switch (direction) {
+    case "up":
+      return { x: 0, y: -KEYBOARD_STEP };
+    case "down":
+      return { x: 0, y: KEYBOARD_STEP };
+    case "left":
+      return { x: -KEYBOARD_STEP, y: 0 };
+    case "right":
+      return { x: KEYBOARD_STEP, y: 0 };
+  }
+}
+function isMoveDirection(value: string | undefined): value is MoveDirection {
+  return (
+    value === "up" || value === "down" || value === "left" || value === "right"
+  );
+}
+function preventDefault(event: Event): void {
+  event.preventDefault();
+}
 
 function dataUrlFor(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(reader.error ?? new Error("Unable to read image."));
-    reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Invalid image URL."));
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("Unable to read image."));
+    reader.onload = () =>
+      typeof reader.result === "string"
+        ? resolve(reader.result)
+        : reject(new Error("Invalid image URL."));
     reader.readAsDataURL(blob);
   });
 }
 
-async function decodeContentImage(bytes: Uint8Array, mimeType: string): Promise<Readonly<{ width: number; height: number }>> {
+async function decodeContentImage(
+  bytes: Uint8Array,
+  mimeType: string,
+): Promise<Readonly<{ width: number; height: number }>> {
   const copy = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(copy).set(bytes);
   const blob = new Blob([copy], { type: mimeType });
@@ -387,10 +869,26 @@ async function decodeContentImage(bytes: Uint8Array, mimeType: string): Promise<
 /** Browser adapters for the existing pure import service; no unvalidated file crosses runtime messaging. */
 export function createContentImporter(): Importer {
   const deps: ImportDependencies = {
-    async readFile(file) { if (!(file instanceof File)) throw new Error("Expected File."); return new Uint8Array(await file.arrayBuffer()); },
+    async readFile(file) {
+      if (!(file instanceof File)) throw new Error("Expected File.");
+      return new Uint8Array(await file.arrayBuffer());
+    },
     decodeImage: decodeContentImage,
-    randomReferenceId() { return crypto.randomUUID(); }, currentTimestamp() { return Date.now(); },
+    randomReferenceId() {
+      return crypto.randomUUID();
+    },
+    currentTimestamp() {
+      return Date.now();
+    },
   };
   const importer = createImportReference(deps);
-  return async (file) => { const result = await importer(file); return result.ok ? result : { ok: false, error: { code: result.error.code, message: result.error.message } }; };
+  return async (file) => {
+    const result = await importer(file);
+    return result.ok
+      ? result
+      : {
+          ok: false,
+          error: { code: result.error.code, message: result.error.message },
+        };
+  };
 }

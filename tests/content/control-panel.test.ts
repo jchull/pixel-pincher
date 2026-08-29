@@ -163,6 +163,10 @@ describe("ControlPanel", () => {
     expect(send).toHaveBeenLastCalledWith(expect.objectContaining({
       kind: "update-settings", patch: { kind: "opacity", opacity: 0.4 },
     }));
+    byId<HTMLButtonElement>("toggle-visibility").click();
+    await vi.waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "update-settings", patch: { kind: "visibility", visible: false },
+    })));
     byId<HTMLInputElement>("visible").click();
     byId<HTMLInputElement>("fit-width").click();
     byId<HTMLInputElement>("inverted").click();
