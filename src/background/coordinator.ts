@@ -24,17 +24,33 @@ import type { PixelPincherCommand } from "./commands";
 import type { TopFrameNavigation } from "./navigation";
 
 export type ActiveTab = TabPage;
-export type ContentSender = Readonly<{ tabId: number; frameId: number; url: string }>;
+export type ContentSender = Readonly<{
+  tabId: number;
+  frameId: number;
+  url: string;
+}>;
 
-type Repository = Pick<OverlayRepository,
-  "cleanupOrphans" | "clearOrigin" | "readHydration" | "readSnapshot" | "replaceReference" | "updatePanelPosition" | "updatePlacement" | "updateSettings">;
+type Repository = Pick<
+  OverlayRepository,
+  | "cleanupOrphans"
+  | "clearOrigin"
+  | "readHydration"
+  | "readSnapshot"
+  | "replaceReference"
+  | "updatePanelPosition"
+  | "updatePlacement"
+  | "updateSettings"
+>;
 
 type DeliveryState = Readonly<{
   pageKey: string;
   revision: number;
   referenceId: ReferenceMetadata["id"] | null;
 }>;
-type SiteAccess = Pick<SiteAccessService, "ensureForUrl" | "has" | "injectForUrl" | "reconcile" | "unregisterOrigin">;
+type SiteAccess = Pick<
+  SiteAccessService,
+  "ensureForUrl" | "has" | "injectForUrl" | "reconcile" | "unregisterOrigin"
+>;
 
 export interface TabResolver {
   getActiveTab(): Promise<ActiveTab | null>;
@@ -68,7 +84,14 @@ export class BackgroundCoordinator {
   readonly #deliveredState = new Map<number, DeliveryState>();
   readonly #diagnostics = new Map<number, RenderDiagnostic>();
 
-  constructor(options: Readonly<{ repository: Repository; siteAccess: SiteAccess; tabs: TabResolver; messenger: TabMessenger }>) {
+  constructor(
+    options: Readonly<{
+      repository: Repository;
+      siteAccess: SiteAccess;
+      tabs: TabResolver;
+      messenger: TabMessenger;
+    }>,
+  ) {
     this.#repository = options.repository;
     this.#siteAccess = options.siteAccess;
     this.#tabs = options.tabs;
@@ -87,7 +110,9 @@ export class BackgroundCoordinator {
   async handleCommand(command: PixelPincherCommand): Promise<void> {
     const active = await this.#tabs.getActiveTab();
     if (active === null) return;
-    await this.#runTab(active.id, async () => this.#handleCommandForActive(command, active));
+    await this.#runTab(active.id, async () =>
+      this.#handleCommandForActive(command, active),
+    );
   }
 
   async handleNavigation(navigation: TopFrameNavigation): Promise<void> {
@@ -95,22 +120,43 @@ export class BackgroundCoordinator {
     const parsed = parseSupportedUrl(navigation.url);
     if (!parsed.ok) return;
     await this.#runTab(navigation.tabId, async () => {
-      if (!await this.#sameTabPage(navigation.tabId, navigation.url)) return;
+      if (!(await this.#sameTabPage(navigation.tabId, navigation.url))) return;
       const origin = deriveOrigin(parsed.value);
       if (origin === undefined) return;
       const enabled = await this.#siteAccess.has(origin);
-      if (!enabled.ok || !enabled.value || !await this.#sameTabPage(navigation.tabId, navigation.url)) return;
+      if (
+        !enabled.ok ||
+        !enabled.value ||
+        !(await this.#sameTabPage(navigation.tabId, navigation.url))
+      )
+        return;
       const current = await this.#repository.readSnapshot(parsed.value);
-      if (!current.ok || !await this.#sameTabPage(navigation.tabId, navigation.url)) return;
+      if (
+        !current.ok ||
+        !(await this.#sameTabPage(navigation.tabId, navigation.url))
+      )
+        return;
       this.#discardStaleDiagnostic(navigation.tabId, current.value);
       const delivered = this.#deliveredState.get(navigation.tabId);
       if (delivered?.referenceId === current.value.reference?.id) {
-        await this.#deliverSettings(navigation.tabId, parsed.value, current.value);
+        await this.#deliverSettings(
+          navigation.tabId,
+          parsed.value,
+          current.value,
+        );
         return;
       }
       const hydration = await this.#repository.readHydration(parsed.value);
-      if (!hydration.ok || !await this.#sameTabPage(navigation.tabId, navigation.url)) return;
-      await this.#deliverHydration(navigation.tabId, parsed.value, hydration.value);
+      if (
+        !hydration.ok ||
+        !(await this.#sameTabPage(navigation.tabId, navigation.url))
+      )
+        return;
+      await this.#deliverHydration(
+        navigation.tabId,
+        parsed.value,
+        hydration.value,
+      );
     });
   }
 
@@ -119,14 +165,18 @@ export class BackgroundCoordinator {
     if (removed.size > 0) {
       try {
         const tabs = await this.#tabs.getTabs();
-        await Promise.all(tabs.map(async (tab) => {
-          const parsed = parseSupportedUrl(tab.url);
-          if (!parsed.ok) return undefined;
-          const origin = deriveOrigin(parsed.value);
-          if (origin === undefined || !removed.has(origin)) return undefined;
-          await this.#runTab(tab.id, async () => this.#clearRemovedTab(tab, parsed.value));
-          return undefined;
-        }));
+        await Promise.all(
+          tabs.map(async (tab) => {
+            const parsed = parseSupportedUrl(tab.url);
+            if (!parsed.ok) return undefined;
+            const origin = deriveOrigin(parsed.value);
+            if (origin === undefined || !removed.has(origin)) return undefined;
+            await this.#runTab(tab.id, async () =>
+              this.#clearRemovedTab(tab, parsed.value),
+            );
+            return undefined;
+          }),
+        );
       } catch {
         // Permission removal cleanup is best effort; reconciliation still runs.
       }
@@ -134,14 +184,22 @@ export class BackgroundCoordinator {
     await this.startup();
   }
 
-  async handlePopup(request: PopupRequest): Promise<PopupResponse<TabState | OverlaySnapshot | undefined>> {
+  async handlePopup(
+    request: PopupRequest,
+  ): Promise<PopupResponse<TabState | OverlaySnapshot | undefined>> {
     const active = await this.#tabs.getActiveTab();
-    if (active === null) return failure(request.requestId, new AppError("unsupported-url"));
-    return this.#runTab(active.id, async () => this.#handlePopupForActive(request, active));
+    if (active === null)
+      return failure(request.requestId, new AppError("unsupported-url"));
+    return this.#runTab(active.id, async () =>
+      this.#handlePopupForActive(request, active),
+    );
   }
 
   /** Handles uncorrelated lifecycle and overlay events from content scripts. */
-  async handleContent(event: ContentEvent, sender: ContentSender): Promise<void> {
+  async handleContent(
+    event: ContentEvent,
+    sender: ContentSender,
+  ): Promise<void> {
     if (sender.frameId !== 0 || sender.url !== event.url) return;
     const parsed = parseSupportedUrl(event.url);
     if (!parsed.ok) return;
@@ -151,34 +209,65 @@ export class BackgroundCoordinator {
     if (current === null || !sameCanonicalPage(current.url, event.url)) return;
 
     await this.#runTab(sender.tabId, async () => {
-      if (!await this.#sameTabPage(sender.tabId, event.url)) return;
+      if (!(await this.#sameTabPage(sender.tabId, event.url))) return;
 
       switch (event.kind) {
         case "content-ready": {
           const hydration = await this.#repository.readHydration(parsed.value);
-          if (!hydration.ok || !await this.#sameTabPage(sender.tabId, event.url)) return;
+          if (
+            !hydration.ok ||
+            !(await this.#sameTabPage(sender.tabId, event.url))
+          )
+            return;
           const enabled = await this.#siteAccess.has(origin);
           if (!enabled.ok || !enabled.value) return;
           this.#discardStaleDiagnostic(sender.tabId, hydration.value.snapshot);
-          await this.#deliverHydration(sender.tabId, parsed.value, hydration.value);
+          await this.#deliverHydration(
+            sender.tabId,
+            parsed.value,
+            hydration.value,
+          );
           return;
         }
         case "placement-committed": {
           const enabled = await this.#siteAccess.has(origin);
-          if (!enabled.ok || !enabled.value || !await this.#sameTabPage(sender.tabId, event.url)) return;
-          const updated = await this.#repository.updatePlacement({ url: parsed.value, placement: event.placement });
-          if (!updated.ok || !await this.#sameTabPage(sender.tabId, event.url)) return;
+          if (
+            !enabled.ok ||
+            !enabled.value ||
+            !(await this.#sameTabPage(sender.tabId, event.url))
+          )
+            return;
+          const updated = await this.#repository.updatePlacement({
+            url: parsed.value,
+            placement: event.placement,
+          });
+          if (
+            !updated.ok ||
+            !(await this.#sameTabPage(sender.tabId, event.url))
+          )
+            return;
           this.#discardStaleDiagnostic(sender.tabId, updated.value);
-          await this.#deliverSettings(sender.tabId, parsed.value, updated.value);
+          await this.#deliverSettings(
+            sender.tabId,
+            parsed.value,
+            updated.value,
+          );
           return;
         }
         case "image-load-failed": {
           const snapshot = await this.#repository.readSnapshot(parsed.value);
-          if (!snapshot.ok || !await this.#sameTabPage(sender.tabId, event.url)) return;
+          if (
+            !snapshot.ok ||
+            !(await this.#sameTabPage(sender.tabId, event.url))
+          )
+            return;
           const enabled = await this.#siteAccess.has(origin);
           if (!enabled.ok || !enabled.value) return;
           if (snapshot.value.reference?.id === event.referenceId) {
-            this.#diagnostics.set(sender.tabId, { referenceId: event.referenceId, error: toPublicError(new AppError("image-render-failed")) });
+            this.#diagnostics.set(sender.tabId, {
+              referenceId: event.referenceId,
+              error: toPublicError(new AppError("image-render-failed")),
+            });
           } else {
             this.#discardStaleDiagnostic(sender.tabId, snapshot.value);
           }
@@ -196,27 +285,31 @@ export class BackgroundCoordinator {
     request: ContentPanelRequest,
     sender: ContentSender,
   ): Promise<ContentPanelResponse<OverlaySnapshot | undefined>> {
-    if (sender.frameId !== 0) return failure(request.requestId, new AppError("invalid-request"));
+    if (sender.frameId !== 0)
+      return failure(request.requestId, new AppError("invalid-request"));
     const url = parseSupportedUrl(sender.url);
-    if (!url.ok) return failure(request.requestId, new AppError("invalid-request"));
+    if (!url.ok)
+      return failure(request.requestId, new AppError("invalid-request"));
     const origin = deriveOrigin(url.value);
-    if (origin === undefined) return failure(request.requestId, new AppError("unsupported-url"));
+    if (origin === undefined)
+      return failure(request.requestId, new AppError("unsupported-url"));
 
     return this.#runTab(sender.tabId, async () => {
-      if (!await this.#sameTabPage(sender.tabId, sender.url)) {
+      if (!(await this.#sameTabPage(sender.tabId, sender.url))) {
         return failure(request.requestId, new AppError("invalid-request"));
       }
       const enabled = await this.#siteAccess.has(origin);
       if (!enabled.ok) return failure(request.requestId, enabled.error);
-      if (!enabled.value) return failure(request.requestId, new AppError("site-access-revoked"));
-      if (!await this.#sameTabPage(sender.tabId, sender.url)) {
+      if (!enabled.value)
+        return failure(request.requestId, new AppError("site-access-revoked"));
+      if (!(await this.#sameTabPage(sender.tabId, sender.url))) {
         return failure(request.requestId, new AppError("invalid-request"));
       }
       switch (request.kind) {
         case "get-panel-state": {
           const snapshot = await this.#repository.readSnapshot(url.value);
           if (!snapshot.ok) return failure(request.requestId, snapshot.error);
-          return await this.#sameTabPage(sender.tabId, sender.url)
+          return (await this.#sameTabPage(sender.tabId, sender.url))
             ? success(request.requestId, snapshot.value)
             : failure(request.requestId, new AppError("invalid-request"));
         }
@@ -226,31 +319,45 @@ export class BackgroundCoordinator {
             panelPosition: request.panelPosition,
           });
           if (!updated.ok) return failure(request.requestId, updated.error);
-          return await this.#sameTabPage(sender.tabId, sender.url)
+          return (await this.#sameTabPage(sender.tabId, sender.url))
             ? success(request.requestId, updated.value)
             : failure(request.requestId, new AppError("invalid-request"));
         }
         case "replace-reference": {
-          const replaced = await this.#repository.replaceReference({ url: url.value, reference: request.reference });
+          const replaced = await this.#repository.replaceReference({
+            url: url.value,
+            reference: request.reference,
+          });
           if (!replaced.ok) return failure(request.requestId, replaced.error);
           const hydration = await this.#repository.readHydration(url.value);
           if (!hydration.ok) return failure(request.requestId, hydration.error);
-          if (!await this.#sameTabPage(sender.tabId, sender.url)) {
+          if (!(await this.#sameTabPage(sender.tabId, sender.url))) {
             return failure(request.requestId, new AppError("invalid-request"));
           }
-          const delivered = await this.#deliverHydration(sender.tabId, url.value, hydration.value);
+          const delivered = await this.#deliverHydration(
+            sender.tabId,
+            url.value,
+            hydration.value,
+          );
           return delivered.ok
             ? success(request.requestId, replaced.value)
             : failure(request.requestId, deliveryFailure(delivered));
         }
         case "update-settings": {
-          const updated = await this.#repository.updateSettings({ url: url.value, patch: request.patch });
+          const updated = await this.#repository.updateSettings({
+            url: url.value,
+            patch: request.patch,
+          });
           if (!updated.ok) return failure(request.requestId, updated.error);
           this.#discardStaleDiagnostic(sender.tabId, updated.value);
-          if (!await this.#sameTabPage(sender.tabId, sender.url)) {
+          if (!(await this.#sameTabPage(sender.tabId, sender.url))) {
             return failure(request.requestId, new AppError("invalid-request"));
           }
-          const delivered = await this.#deliverSettings(sender.tabId, url.value, updated.value);
+          const delivered = await this.#deliverSettings(
+            sender.tabId,
+            url.value,
+            updated.value,
+          );
           return delivered.ok
             ? success(request.requestId, updated.value)
             : failure(request.requestId, deliveryFailure(delivered));
@@ -258,17 +365,32 @@ export class BackgroundCoordinator {
         case "clear-site": {
           const snapshot = await this.#repository.readSnapshot(url.value);
           if (!snapshot.ok) return failure(request.requestId, snapshot.error);
-          const revision = nextRevision(Math.max(snapshot.value.revision, this.#deliveredRevisionFor(sender.tabId, url.value)));
-          if (revision === undefined) return failure(request.requestId, new AppError("invalid-stored-data"));
+          const revision = nextRevision(
+            Math.max(
+              snapshot.value.revision,
+              this.#deliveredRevisionFor(sender.tabId, url.value),
+            ),
+          );
+          if (revision === undefined)
+            return failure(
+              request.requestId,
+              new AppError("invalid-stored-data"),
+            );
           const cleared = await this.#repository.clearOrigin(origin);
           if (!cleared.ok) return failure(request.requestId, cleared.error);
           const unregistered = await this.#siteAccess.unregisterOrigin(origin);
-          if (!unregistered.ok) return failure(request.requestId, unregistered.error);
-          if (!await this.#sameTabPage(sender.tabId, sender.url)) {
+          if (!unregistered.ok)
+            return failure(request.requestId, unregistered.error);
+          if (!(await this.#sameTabPage(sender.tabId, sender.url))) {
             return failure(request.requestId, new AppError("invalid-request"));
           }
-          const delivered = await this.#messenger.deliver(sender.tabId, url.value, { kind: "clear-overlay", revision });
-          if (!delivered.ok) return failure(request.requestId, deliveryFailure(delivered));
+          const delivered = await this.#messenger.deliver(
+            sender.tabId,
+            url.value,
+            { kind: "clear-overlay", revision },
+          );
+          if (!delivered.ok)
+            return failure(request.requestId, deliveryFailure(delivered));
           this.#diagnostics.delete(sender.tabId);
           this.#rememberDelivery(sender.tabId, url.value, revision);
           return success(request.requestId, undefined);
@@ -277,24 +399,34 @@ export class BackgroundCoordinator {
     });
   }
 
-  async #handlePopupForActive(request: PopupRequest, active: ActiveTab): Promise<PopupResponse<TabState | OverlaySnapshot | undefined>> {
+  async #handlePopupForActive(
+    request: PopupRequest,
+    active: ActiveTab,
+  ): Promise<PopupResponse<TabState | OverlaySnapshot | undefined>> {
     const url = parseSupportedUrl(active.url);
-    if (!url.ok) return failure(request.requestId, new AppError("unsupported-url"));
+    if (!url.ok)
+      return failure(request.requestId, new AppError("unsupported-url"));
 
     const activeOrigin = deriveOrigin(url.value);
-    if (activeOrigin === undefined) return failure(request.requestId, new AppError("unsupported-url"));
+    if (activeOrigin === undefined)
+      return failure(request.requestId, new AppError("unsupported-url"));
 
     if (request.kind === "get-tab-state") {
       const enabled = await this.#siteAccess.has(activeOrigin);
       if (!enabled.ok) return failure(request.requestId, enabled.error);
       if (enabled.value) {
-        if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
-        const injected = await this.#siteAccess.injectForUrl(url.value, active.id);
+        if (!(await this.#sameActiveTab(active)))
+          return failure(request.requestId, new AppError("invalid-request"));
+        const injected = await this.#siteAccess.injectForUrl(
+          url.value,
+          active.id,
+        );
         if (!injected.ok) return failure(request.requestId, injected.error);
       }
       const snapshot = await this.#repository.readSnapshot(url.value);
       if (!snapshot.ok) return failure(request.requestId, snapshot.error);
-      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
+      if (!(await this.#sameActiveTab(active)))
+        return failure(request.requestId, new AppError("invalid-request"));
       const diagnostic = this.#diagnosticFor(active.id, snapshot.value);
       const state: TabState = {
         tabId: active.id,
@@ -308,23 +440,35 @@ export class BackgroundCoordinator {
     }
 
     const requested = parseSupportedUrl(request.url);
-    if (!requested.ok || !sameCanonicalPage(requested.value.toString(), active.url)) {
+    if (
+      !requested.ok ||
+      !sameCanonicalPage(requested.value.toString(), active.url)
+    ) {
       return failure(request.requestId, new AppError("invalid-request"));
     }
     const origin = deriveOrigin(requested.value);
-    if (origin === undefined) return failure(request.requestId, new AppError("unsupported-url"));
+    if (origin === undefined)
+      return failure(request.requestId, new AppError("unsupported-url"));
 
     if (request.kind === "register-site") {
-      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
+      if (!(await this.#sameActiveTab(active)))
+        return failure(request.requestId, new AppError("invalid-request"));
       const ensured = await this.#siteAccess.ensureForUrl(requested.value);
       if (!ensured.ok) return failure(request.requestId, ensured.error);
-      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
-      const injected = await this.#siteAccess.injectForUrl(requested.value, active.id);
+      if (!(await this.#sameActiveTab(active)))
+        return failure(request.requestId, new AppError("invalid-request"));
+      const injected = await this.#siteAccess.injectForUrl(
+        requested.value,
+        active.id,
+      );
       if (!injected.ok) return failure(request.requestId, injected.error);
-      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
-      const snapshot = await this.#repository.readSnapshot(requested.value);
-      if (!snapshot.ok) return failure(request.requestId, snapshot.error);
-      return success(request.requestId, snapshot.value);
+      if (!(await this.#sameActiveTab(active)))
+        return failure(request.requestId, new AppError("invalid-request"));
+      const hydration = await this.#repository.readHydration(requested.value);
+      if (!hydration.ok) return failure(request.requestId, hydration.error);
+      const delivered = await this.#deliverHydration(active.id, requested.value, hydration.value);
+      if (!delivered.ok) return failure(request.requestId, deliveryFailure(delivered));
+      return success(request.requestId, hydration.value.snapshot);
     }
 
     if (request.kind === "clear-site") {
@@ -332,79 +476,137 @@ export class BackgroundCoordinator {
       // Corrupt stored data cannot be read back, but the clear must still reach
       // the repository; fall back to the last delivered revision for the overlay message.
       let latest: number;
-      if (snapshot.ok) latest = Math.max(snapshot.value.revision, this.#deliveredRevisionFor(active.id, requested.value));
-      else if (snapshot.error.code === "invalid-stored-data") latest = this.#deliveredRevisionFor(active.id, requested.value);
+      if (snapshot.ok)
+        latest = Math.max(
+          snapshot.value.revision,
+          this.#deliveredRevisionFor(active.id, requested.value),
+        );
+      else if (snapshot.error.code === "invalid-stored-data")
+        latest = this.#deliveredRevisionFor(active.id, requested.value);
       else return failure(request.requestId, snapshot.error);
       const revision = nextRevision(latest);
-      if (revision === undefined) return failure(request.requestId, new AppError("invalid-stored-data"));
-      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
+      if (revision === undefined)
+        return failure(request.requestId, new AppError("invalid-stored-data"));
+      if (!(await this.#sameActiveTab(active)))
+        return failure(request.requestId, new AppError("invalid-request"));
       const cleared = await this.#repository.clearOrigin(origin);
       if (!cleared.ok) return failure(request.requestId, cleared.error);
       this.#diagnostics.delete(active.id);
-      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
+      if (!(await this.#sameActiveTab(active)))
+        return failure(request.requestId, new AppError("invalid-request"));
       const unregistered = await this.#siteAccess.unregisterOrigin(origin);
-      if (!unregistered.ok) return failure(request.requestId, unregistered.error);
-      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
-      const delivered = await this.#messenger.deliver(active.id, requested.value, { kind: "clear-overlay", revision });
-      if (!delivered.ok) return failure(request.requestId, deliveryFailure(delivered));
+      if (!unregistered.ok)
+        return failure(request.requestId, unregistered.error);
+      if (!(await this.#sameActiveTab(active)))
+        return failure(request.requestId, new AppError("invalid-request"));
+      const delivered = await this.#messenger.deliver(
+        active.id,
+        requested.value,
+        { kind: "clear-overlay", revision },
+      );
+      if (!delivered.ok)
+        return failure(request.requestId, deliveryFailure(delivered));
       this.#rememberDelivery(active.id, requested.value, revision);
-      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
+      if (!(await this.#sameActiveTab(active)))
+        return failure(request.requestId, new AppError("invalid-request"));
       return success(request.requestId, undefined);
     }
 
     if (request.kind === "replace-reference") {
-      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
+      if (!(await this.#sameActiveTab(active)))
+        return failure(request.requestId, new AppError("invalid-request"));
       const enabled = await this.#siteAccess.has(origin);
       if (!enabled.ok) return failure(request.requestId, enabled.error);
-      if (!enabled.value) return failure(request.requestId, new AppError("site-access-revoked"));
-      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
-      const replaced = await this.#repository.replaceReference({ url: requested.value, reference: request.reference });
+      if (!enabled.value)
+        return failure(request.requestId, new AppError("site-access-revoked"));
+      if (!(await this.#sameActiveTab(active)))
+        return failure(request.requestId, new AppError("invalid-request"));
+      const replaced = await this.#repository.replaceReference({
+        url: requested.value,
+        reference: request.reference,
+      });
       if (!replaced.ok) return failure(request.requestId, replaced.error);
       this.#discardStaleDiagnostic(active.id, replaced.value);
-      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
+      if (!(await this.#sameActiveTab(active)))
+        return failure(request.requestId, new AppError("invalid-request"));
       const hydration = await this.#repository.readHydration(requested.value);
       if (!hydration.ok) return failure(request.requestId, hydration.error);
-      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
-      const delivered = await this.#deliverHydration(active.id, requested.value, hydration.value);
-      if (!delivered.ok) return failure(request.requestId, deliveryFailure(delivered));
-      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
+      if (!(await this.#sameActiveTab(active)))
+        return failure(request.requestId, new AppError("invalid-request"));
+      const delivered = await this.#deliverHydration(
+        active.id,
+        requested.value,
+        hydration.value,
+      );
+      if (!delivered.ok)
+        return failure(request.requestId, deliveryFailure(delivered));
+      if (!(await this.#sameActiveTab(active)))
+        return failure(request.requestId, new AppError("invalid-request"));
       return success(request.requestId, replaced.value);
     }
 
-    if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
+    if (!(await this.#sameActiveTab(active)))
+      return failure(request.requestId, new AppError("invalid-request"));
     const enabled = await this.#siteAccess.has(origin);
     if (!enabled.ok) return failure(request.requestId, enabled.error);
-    if (!enabled.value) return failure(request.requestId, new AppError("site-access-revoked"));
-    if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
-    const updated = await this.#repository.updateSettings({ url: requested.value, patch: request.patch });
+    if (!enabled.value)
+      return failure(request.requestId, new AppError("site-access-revoked"));
+    if (!(await this.#sameActiveTab(active)))
+      return failure(request.requestId, new AppError("invalid-request"));
+    const updated = await this.#repository.updateSettings({
+      url: requested.value,
+      patch: request.patch,
+    });
     if (!updated.ok) return failure(request.requestId, updated.error);
     this.#discardStaleDiagnostic(active.id, updated.value);
-    if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
-    const delivered = await this.#deliverSettings(active.id, requested.value, updated.value);
-    if (!delivered.ok) return failure(request.requestId, deliveryFailure(delivered));
-    if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
+    if (!(await this.#sameActiveTab(active)))
+      return failure(request.requestId, new AppError("invalid-request"));
+    const delivered = await this.#deliverSettings(
+      active.id,
+      requested.value,
+      updated.value,
+    );
+    if (!delivered.ok)
+      return failure(request.requestId, deliveryFailure(delivered));
+    if (!(await this.#sameActiveTab(active)))
+      return failure(request.requestId, new AppError("invalid-request"));
     return success(request.requestId, updated.value);
   }
 
-  async #handleCommandForActive(command: PixelPincherCommand, active: ActiveTab): Promise<void> {
+  async #handleCommandForActive(
+    command: PixelPincherCommand,
+    active: ActiveTab,
+  ): Promise<void> {
     const parsed = parseSupportedUrl(active.url);
     if (!parsed.ok) return;
     const origin = deriveOrigin(parsed.value);
     if (origin === undefined) return;
     const enabled = await this.#siteAccess.has(origin);
-    if (!enabled.ok || !enabled.value || !await this.#sameActiveTab(active)) return;
+    if (!enabled.ok || !enabled.value || !(await this.#sameActiveTab(active)))
+      return;
     const current = await this.#repository.readSnapshot(parsed.value);
-    if (!current.ok || current.value.reference === null || !await this.#sameActiveTab(active)) return;
+    if (
+      !current.ok ||
+      current.value.reference === null ||
+      !(await this.#sameActiveTab(active))
+    )
+      return;
 
     const patch = this.#commandPatch(command, current.value);
     if (patch === undefined) return;
-    const updated = await this.#repository.updateSettings({ url: parsed.value, patch });
-    if (!updated.ok || !await this.#sameActiveTab(active)) return;
+    const updated = await this.#repository.updateSettings({
+      url: parsed.value,
+      patch,
+    });
+    if (!updated.ok || !(await this.#sameActiveTab(active))) return;
     this.#discardStaleDiagnostic(active.id, updated.value);
     await this.#deliverSettings(active.id, parsed.value, updated.value);
   }
 
-  #commandPatch(command: PixelPincherCommand, snapshot: OverlaySnapshot): SettingsPatch | undefined {
+  #commandPatch(
+    command: PixelPincherCommand,
+    snapshot: OverlaySnapshot,
+  ): SettingsPatch | undefined {
     switch (command) {
       case "toggle-visibility":
         return { kind: "visibility", visible: !snapshot.settings.visible };
@@ -419,18 +621,37 @@ export class BackgroundCoordinator {
     }
   }
 
-  #nudge(snapshot: OverlaySnapshot, x: number, y: number): SettingsPatch | undefined {
-    const placement = { x: snapshot.settings.placement.x + x, y: snapshot.settings.placement.y + y };
-    if (!Number.isSafeInteger(placement.x) || !Number.isSafeInteger(placement.y) ||
-      placement.x < -1_000_000 || placement.x > 1_000_000 || placement.y < -1_000_000 || placement.y > 1_000_000) {
+  #nudge(
+    snapshot: OverlaySnapshot,
+    x: number,
+    y: number,
+  ): SettingsPatch | undefined {
+    const placement = {
+      x: snapshot.settings.placement.x + x,
+      y: snapshot.settings.placement.y + y,
+    };
+    if (
+      !Number.isSafeInteger(placement.x) ||
+      !Number.isSafeInteger(placement.y) ||
+      placement.x < -1_000_000 ||
+      placement.x > 1_000_000 ||
+      placement.y < -1_000_000 ||
+      placement.y > 1_000_000
+    ) {
       return undefined;
     }
     return { kind: "placement", placement };
   }
 
-  #diagnosticFor(tabId: number, snapshot: OverlaySnapshot): RenderDiagnostic | null {
+  #diagnosticFor(
+    tabId: number,
+    snapshot: OverlaySnapshot,
+  ): RenderDiagnostic | null {
     const diagnostic = this.#diagnostics.get(tabId);
-    if (diagnostic !== undefined && diagnostic.referenceId !== snapshot.reference?.id) {
+    if (
+      diagnostic !== undefined &&
+      diagnostic.referenceId !== snapshot.reference?.id
+    ) {
       this.#diagnostics.delete(tabId);
       return null;
     }
@@ -441,43 +662,94 @@ export class BackgroundCoordinator {
     this.#diagnosticFor(tabId, snapshot);
   }
 
-  async #deliverHydration(tabId: number, expectedUrl: URL, hydration: Hydration): Promise<Result<void, DeliveryError>> {
-    const delivered = await this.#messenger.deliver(tabId, expectedUrl, { kind: "hydrate-overlay", hydration });
-    if (delivered.ok) this.#rememberDelivery(tabId, expectedUrl, hydration.snapshot.revision, hydration.snapshot.reference?.id ?? null);
+  async #deliverHydration(
+    tabId: number,
+    expectedUrl: URL,
+    hydration: Hydration,
+  ): Promise<Result<void, DeliveryError>> {
+    const delivered = await this.#messenger.deliver(tabId, expectedUrl, {
+      kind: "hydrate-overlay",
+      hydration,
+    });
+    if (delivered.ok)
+      this.#rememberDelivery(
+        tabId,
+        expectedUrl,
+        hydration.snapshot.revision,
+        hydration.snapshot.reference?.id ?? null,
+      );
     return delivered;
   }
 
-  async #deliverSettings(tabId: number, expectedUrl: URL, snapshot: OverlaySnapshot): Promise<Result<void, DeliveryError>> {
-    if (snapshot.revision <= this.#deliveredRevisionFor(tabId, expectedUrl)) return { ok: true, value: undefined };
-    const delivered = await this.#messenger.deliver(tabId, expectedUrl, { kind: "apply-settings", snapshot });
-    if (delivered.ok) this.#rememberDelivery(tabId, expectedUrl, snapshot.revision, snapshot.reference?.id ?? null);
+  async #deliverSettings(
+    tabId: number,
+    expectedUrl: URL,
+    snapshot: OverlaySnapshot,
+  ): Promise<Result<void, DeliveryError>> {
+    if (snapshot.revision <= this.#deliveredRevisionFor(tabId, expectedUrl))
+      return { ok: true, value: undefined };
+    const delivered = await this.#messenger.deliver(tabId, expectedUrl, {
+      kind: "apply-settings",
+      snapshot,
+    });
+    if (delivered.ok)
+      this.#rememberDelivery(
+        tabId,
+        expectedUrl,
+        snapshot.revision,
+        snapshot.reference?.id ?? null,
+      );
     return delivered;
   }
 
   #deliveredRevisionFor(tabId: number, expectedUrl: URL): number {
     const pageKey = derivePageKey(expectedUrl);
     const delivered = this.#deliveredState.get(tabId);
-    return pageKey !== undefined && delivered?.pageKey === pageKey ? delivered.revision : 0;
+    return pageKey !== undefined && delivered?.pageKey === pageKey
+      ? delivered.revision
+      : 0;
   }
 
-  #rememberDelivery(tabId: number, expectedUrl: URL, revision: number, referenceId: DeliveryState["referenceId"] = null): void {
+  #rememberDelivery(
+    tabId: number,
+    expectedUrl: URL,
+    revision: number,
+    referenceId: DeliveryState["referenceId"] = null,
+  ): void {
     const pageKey = derivePageKey(expectedUrl);
-    if (pageKey !== undefined) this.#deliveredState.set(tabId, { pageKey, revision, referenceId });
+    if (pageKey !== undefined)
+      this.#deliveredState.set(tabId, { pageKey, revision, referenceId });
   }
 
   async #clearRemovedTab(tab: ActiveTab, expectedUrl: URL): Promise<void> {
-    if (!await this.#sameTabPage(tab.id, expectedUrl.toString())) return;
+    if (!(await this.#sameTabPage(tab.id, expectedUrl.toString()))) return;
     const snapshot = await this.#repository.readSnapshot(expectedUrl);
-    if (!snapshot.ok || !await this.#sameTabPage(tab.id, expectedUrl.toString())) return;
-    const revision = nextRevision(Math.max(snapshot.value.revision, this.#deliveredRevisionFor(tab.id, expectedUrl)));
+    if (
+      !snapshot.ok ||
+      !(await this.#sameTabPage(tab.id, expectedUrl.toString()))
+    )
+      return;
+    const revision = nextRevision(
+      Math.max(
+        snapshot.value.revision,
+        this.#deliveredRevisionFor(tab.id, expectedUrl),
+      ),
+    );
     if (revision === undefined) return;
-    const delivered = await this.#messenger.deliver(tab.id, expectedUrl, { kind: "clear-overlay", revision });
+    const delivered = await this.#messenger.deliver(tab.id, expectedUrl, {
+      kind: "clear-overlay",
+      revision,
+    });
     if (delivered.ok) this.#rememberDelivery(tab.id, expectedUrl, revision);
   }
 
   async #sameActiveTab(expected: ActiveTab): Promise<boolean> {
     const current = await this.#tabs.getActiveTab();
-    return current !== null && current.id === expected.id && sameCanonicalPage(current.url, expected.url);
+    return (
+      current !== null &&
+      current.id === expected.id &&
+      sameCanonicalPage(current.url, expected.url)
+    );
   }
 
   async #sameTabPage(tabId: number, expectedUrl: string): Promise<boolean> {
@@ -488,7 +760,9 @@ export class BackgroundCoordinator {
   async #runTab<T>(tabId: number, operation: () => Promise<T>): Promise<T> {
     const previous = this.#tabOperations.get(tabId) ?? Promise.resolve();
     let release: (() => void) | undefined;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const queued = previous.then(() => gate);
     this.#tabOperations.set(tabId, queued);
     await previous;
@@ -496,7 +770,8 @@ export class BackgroundCoordinator {
       return await operation();
     } finally {
       release?.();
-      if (this.#tabOperations.get(tabId) === queued) this.#tabOperations.delete(tabId);
+      if (this.#tabOperations.get(tabId) === queued)
+        this.#tabOperations.delete(tabId);
     }
   }
 }
@@ -504,21 +779,32 @@ export class BackgroundCoordinator {
 export function createChromeTabResolver(): TabResolver {
   return {
     async getActiveTab() {
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tabs = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
       const tab = tabs[0];
-      return tab?.id !== undefined && tab.url !== undefined ? { id: tab.id, url: tab.url } : null;
+      return tab?.id !== undefined && tab.url !== undefined
+        ? { id: tab.id, url: tab.url }
+        : null;
     },
     async getTab(tabId) {
       try {
         const tab = await chrome.tabs.get(tabId);
-        return tab.id !== undefined && tab.url !== undefined ? { id: tab.id, url: tab.url } : null;
+        return tab.id !== undefined && tab.url !== undefined
+          ? { id: tab.id, url: tab.url }
+          : null;
       } catch {
         return null;
       }
     },
     async getTabs() {
       const tabs = await chrome.tabs.query({});
-      return tabs.flatMap((tab) => tab.id !== undefined && tab.url !== undefined ? [{ id: tab.id, url: tab.url }] : []);
+      return tabs.flatMap((tab) =>
+        tab.id !== undefined && tab.url !== undefined
+          ? [{ id: tab.id, url: tab.url }]
+          : [],
+      );
     },
   };
 }

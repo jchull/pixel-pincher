@@ -1,16 +1,16 @@
 :root {
-  --color-text: #1f2937;
-  --color-text-muted: #4b5563;
-  --color-border: #6b7280;
-  --color-focus: #1d4ed8;
-  --color-primary: #2563eb;
-  --color-primary-hover: #1d4ed8;
-  --color-primary-active: #1e40af;
-  --color-danger: #b91c1c;
-  --color-danger-hover: #991b1b;
-  --color-danger-background: #fef2f2;
-  --color-disabled-text: #6b7280;
-  --color-disabled-background: #e5e7eb;
+  --color-text: #e7eefb;
+  --color-text-muted: #cbd5e1;
+  --color-border: rgb(148 163 184 / 34%);
+  --color-focus: #60a5fa;
+  --color-primary: rgb(51 65 85 / 90%);
+  --color-primary-hover: rgb(71 85 105 / 95%);
+  --color-primary-active: rgb(30 41 59 / 95%);
+  --color-danger: #fca5a5;
+  --color-danger-hover: #fecaca;
+  --color-danger-background: rgb(127 29 29 / 34%);
+  --color-disabled-text: #94a3b8;
+  --color-disabled-background: rgb(51 65 85 / 55%);
   --radius: 6px;
   --space-1: 4px;
   --space-2: 8px;
@@ -26,14 +26,18 @@ body {
   width: min(720px, 100vw);
   margin: 0;
   color: var(--color-text);
-  background: #fff;
+  background: linear-gradient(145deg, rgb(15 23 42 / 97%), rgb(30 41 59 / 97%));
   font-family: system-ui, sans-serif;
   font-size: 0.875rem;
   line-height: 1.45;
 }
 
 main {
+  min-height: 100vh;
   padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 14px 34px rgb(2 6 23 / 42%);
 }
 
 h1 {
@@ -143,16 +147,16 @@ button:disabled {
 }
 
 #cancel-clear {
-  background: #fff;
+  background: rgb(51 65 85 / 65%);
   color: var(--color-text);
   border-color: var(--color-border);
 }
 
 #cancel-clear:enabled:hover {
-  background: #f3f4f6;
+  background: rgb(71 85 105 / 78%);
 }
 #cancel-clear:enabled:active {
-  background: #e5e7eb;
+  background: rgb(30 41 59 / 95%);
 }
 
 #confirm-clear {

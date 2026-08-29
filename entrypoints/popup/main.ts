@@ -68,7 +68,7 @@ function markup(state: PopupState): string {
   }
   // The in-page panel owns every enabled-site control. The popup remains only
   // for the user-gesture permission bootstrap until its legacy UI is removed.
-  return `<h1>Pixel Pincher</h1>${status}<p>Pixel Pincher is enabled for this site. Use the in-page control panel to manage the reference and overlay.</p>${state.kind === "error" ? '<button id="retry" type="button">Retry</button>' : ""}`;
+  return `<h1>Pixel Pincher</h1>${status}<p>Pixel Pincher is enabled for this site. Use the in-page control panel to manage the reference and overlay.</p><button id="toggle-panel" type="button">Hide in-page controls</button>${state.kind === "error" ? '<button id="retry" type="button">Retry</button>' : ""}`;
 }
 
 function input(root: HTMLElement, id: string): HTMLInputElement | undefined {
@@ -81,6 +81,26 @@ let selectedFile: File | undefined;
 function attach(root: HTMLElement, controller: PopupController): void {
   root.querySelector("#enable-site")?.addEventListener("click", () => { void controller.enable(); });
   root.querySelector("#retry")?.addEventListener("click", () => { void controller.retry(); });
+  root.querySelector<HTMLButtonElement>("#toggle-panel")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    if (!(button instanceof HTMLButtonElement)) return;
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tabId = tabs[0]?.id;
+    if (tabId === undefined) return;
+    const result = await chrome.scripting.executeScript({
+      target: { frameIds: [0], tabId },
+      func: () => {
+        const panel = document.getElementById("pixel-pincher-control-panel");
+        if (panel === null) return null;
+        const visible = panel.style.display === "none";
+        panel.style.display = visible ? "block" : "none";
+        panel.setAttribute("aria-hidden", String(!visible));
+        return visible;
+      },
+    });
+    const visible = result[0]?.result;
+    if (typeof visible === "boolean") button.textContent = visible ? "Hide in-page controls" : "Show in-page controls";
+  });
   root.querySelector("#reference-file")?.addEventListener("change", (event) => {
     const target = event.currentTarget;
     if (target instanceof HTMLInputElement && target.files?.[0] !== undefined) {

@@ -1,8 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { BackgroundCoordinator, type ActiveTab, type TabResolver } from "../../src/background/coordinator";
+import {
+  BackgroundCoordinator,
+  type ActiveTab,
+  type TabResolver,
+} from "../../src/background/coordinator";
 import { TabMessenger } from "../../src/background/tab-messenger";
-import { AppError, type Hydration, type ImportedReference, type OverlaySnapshot, type SettingsPatch } from "../../src/shared/contracts";
+import {
+  AppError,
+  type Hydration,
+  type ImportedReference,
+  type OverlaySnapshot,
+  type SettingsPatch,
+} from "../../src/shared/contracts";
 import { deriveOrigin, derivePageKey } from "../../src/shared/keys";
 import { parseImportedReference } from "../../src/shared/parse";
 
@@ -15,17 +25,33 @@ function known<T>(value: T | null | undefined, message: string): T {
   return value;
 }
 
-function reference(id = "123e4567-e89b-42d3-a456-426614174000"): ImportedReference {
+function reference(
+  id = "123e4567-e89b-42d3-a456-426614174000",
+): ImportedReference {
   const dataUrl = "data:image/png;base64,aGVsbG8=";
   const parsed = parseImportedReference({
-    metadata: { id, name: "reference.png", mimeType: "image/png", width: 1, height: 1, encodedBytes: new TextEncoder().encode(dataUrl).byteLength, importedAt: 1 },
+    metadata: {
+      id,
+      name: "reference.png",
+      mimeType: "image/png",
+      width: 1,
+      height: 1,
+      encodedBytes: new TextEncoder().encode(dataUrl).byteLength,
+      importedAt: 1,
+    },
     dataUrl,
   });
   if (!parsed.ok) throw new Error("Test reference must parse.");
   return parsed.value;
 }
 
-function snapshot(input: Readonly<{ reference?: ImportedReference | null; revision?: number; url?: string }> = {}): OverlaySnapshot {
+function snapshot(
+  input: Readonly<{
+    reference?: ImportedReference | null;
+    revision?: number;
+    url?: string;
+  }> = {},
+): OverlaySnapshot {
   const url = new URL(input.url ?? pageUrl);
   return {
     revision: input.revision ?? 3,
@@ -39,7 +65,10 @@ function snapshot(input: Readonly<{ reference?: ImportedReference | null; revisi
       sizing: { kind: "fit-width", lastScalePercent: 100 },
       interactionMode: "click-through",
     },
-    reference: input.reference === undefined || input.reference === null ? null : input.reference.metadata,
+    reference:
+      input.reference === undefined || input.reference === null
+        ? null
+        : input.reference.metadata,
   };
 }
 
@@ -60,45 +89,113 @@ class FakeTabs implements TabResolver {
   }
 }
 
-function createCoordinator(input: Readonly<{ currentSnapshot?: OverlaySnapshot; enabled?: boolean }> = {}) {
+function createCoordinator(
+  input: Readonly<{
+    currentSnapshot?: OverlaySnapshot;
+    enabled?: boolean;
+  }> = {},
+) {
   const tabs = new FakeTabs();
   let currentSnapshot = input.currentSnapshot ?? snapshot();
   let hydrationReference: ImportedReference | null = null;
-  const hydration = (): Hydration => currentSnapshot.reference === null
-    ? { snapshot: { ...currentSnapshot, reference: null }, reference: null }
-    : { snapshot: { ...currentSnapshot, reference: known(hydrationReference, "Reference must be available.").metadata }, reference: known(hydrationReference, "Reference must be available.") };
+  const hydration = (): Hydration =>
+    currentSnapshot.reference === null
+      ? { snapshot: { ...currentSnapshot, reference: null }, reference: null }
+      : {
+          snapshot: {
+            ...currentSnapshot,
+            reference: known(hydrationReference, "Reference must be available.")
+              .metadata,
+          },
+          reference: known(hydrationReference, "Reference must be available."),
+        };
   const repository = {
     cleanupOrphans: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
     clearOrigin: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
-    readHydration: vi.fn().mockImplementation(async () => ({ ok: true as const, value: hydration() })),
-    readSnapshot: vi.fn().mockImplementation(async () => ({ ok: true as const, value: currentSnapshot })),
-    replaceReference: vi.fn().mockImplementation(async ({ reference: next }: { reference: ImportedReference }) => {
-      hydrationReference = next;
-      currentSnapshot = snapshot({ reference: next, revision: currentSnapshot.revision + 1 });
-      return { ok: true as const, value: currentSnapshot };
-    }),
-    updatePlacement: vi.fn().mockImplementation(async ({ placement }: { placement: { x: number; y: number } }) => {
-      currentSnapshot = { ...currentSnapshot, revision: currentSnapshot.revision + 1, settings: { ...currentSnapshot.settings, placement } };
-      return { ok: true as const, value: currentSnapshot };
-    }),
-    updatePanelPosition: vi.fn().mockImplementation(async ({ panelPosition }: { panelPosition: { x: number; y: number } }) => {
-      currentSnapshot = { ...currentSnapshot, revision: currentSnapshot.revision + 1, panelPosition };
-      return { ok: true as const, value: currentSnapshot };
-    }),
-    updateSettings: vi.fn().mockImplementation(async ({ patch }: { patch: SettingsPatch }) => {
-      const settings = (() => {
-        switch (patch.kind) {
-          case "visibility": return { ...currentSnapshot.settings, visible: patch.visible };
-          case "opacity": return { ...currentSnapshot.settings, opacity: patch.opacity };
-          case "inversion": return { ...currentSnapshot.settings, inverted: patch.inverted };
-          case "sizing": return { ...currentSnapshot.settings, sizing: patch.sizing };
-          case "interaction-mode": return { ...currentSnapshot.settings, interactionMode: patch.interactionMode };
-          case "placement": return { ...currentSnapshot.settings, placement: patch.placement };
-        }
-      })();
-      currentSnapshot = { ...currentSnapshot, revision: currentSnapshot.revision + 1, settings };
-      return { ok: true as const, value: currentSnapshot };
-    }),
+    readHydration: vi
+      .fn()
+      .mockImplementation(async () => ({
+        ok: true as const,
+        value: hydration(),
+      })),
+    readSnapshot: vi
+      .fn()
+      .mockImplementation(async () => ({
+        ok: true as const,
+        value: currentSnapshot,
+      })),
+    replaceReference: vi
+      .fn()
+      .mockImplementation(
+        async ({ reference: next }: { reference: ImportedReference }) => {
+          hydrationReference = next;
+          currentSnapshot = snapshot({
+            reference: next,
+            revision: currentSnapshot.revision + 1,
+          });
+          return { ok: true as const, value: currentSnapshot };
+        },
+      ),
+    updatePlacement: vi
+      .fn()
+      .mockImplementation(
+        async ({ placement }: { placement: { x: number; y: number } }) => {
+          currentSnapshot = {
+            ...currentSnapshot,
+            revision: currentSnapshot.revision + 1,
+            settings: { ...currentSnapshot.settings, placement },
+          };
+          return { ok: true as const, value: currentSnapshot };
+        },
+      ),
+    updatePanelPosition: vi
+      .fn()
+      .mockImplementation(
+        async ({
+          panelPosition,
+        }: {
+          panelPosition: { x: number; y: number };
+        }) => {
+          currentSnapshot = {
+            ...currentSnapshot,
+            revision: currentSnapshot.revision + 1,
+            panelPosition,
+          };
+          return { ok: true as const, value: currentSnapshot };
+        },
+      ),
+    updateSettings: vi
+      .fn()
+      .mockImplementation(async ({ patch }: { patch: SettingsPatch }) => {
+        const settings = (() => {
+          switch (patch.kind) {
+            case "visibility":
+              return { ...currentSnapshot.settings, visible: patch.visible };
+            case "opacity":
+              return { ...currentSnapshot.settings, opacity: patch.opacity };
+            case "inversion":
+              return { ...currentSnapshot.settings, inverted: patch.inverted };
+            case "sizing":
+              return { ...currentSnapshot.settings, sizing: patch.sizing };
+            case "interaction-mode":
+              return {
+                ...currentSnapshot.settings,
+                interactionMode: patch.interactionMode,
+              };
+            case "placement":
+              return {
+                ...currentSnapshot.settings,
+                placement: patch.placement,
+              };
+          }
+        })();
+        currentSnapshot = {
+          ...currentSnapshot,
+          revision: currentSnapshot.revision + 1,
+          settings,
+        };
+        return { ok: true as const, value: currentSnapshot };
+      }),
   };
   const siteAccess = {
     ensureForUrl: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
@@ -113,7 +210,21 @@ function createCoordinator(input: Readonly<{ currentSnapshot?: OverlaySnapshot; 
     { inject: vi.fn().mockResolvedValue({ ok: true, value: undefined }) },
     tabs,
   );
-  return { coordinator: new BackgroundCoordinator({ repository, siteAccess, tabs, messenger }), repository, send, siteAccess, tabs, setSnapshot: (next: OverlaySnapshot) => { currentSnapshot = next; } };
+  return {
+    coordinator: new BackgroundCoordinator({
+      repository,
+      siteAccess,
+      tabs,
+      messenger,
+    }),
+    repository,
+    send,
+    siteAccess,
+    tabs,
+    setSnapshot: (next: OverlaySnapshot) => {
+      currentSnapshot = next;
+    },
+  };
 }
 
 describe("BackgroundCoordinator", () => {
@@ -121,39 +232,93 @@ describe("BackgroundCoordinator", () => {
     const harness = createCoordinator();
     const imported = reference();
 
-    await expect(harness.coordinator.handlePopup({ kind: "get-tab-state", requestId: "state" })).resolves.toMatchObject({ ok: true });
-    await expect(harness.coordinator.handlePopup({ kind: "register-site", requestId: "register", url: pageUrlWithOtherHash })).resolves.toEqual({ requestId: "register", ok: true, value: snapshot() });
-    await expect(harness.coordinator.handlePopup({ kind: "replace-reference", requestId: "replace", url: pageUrlWithOtherHash, reference: imported })).resolves.toMatchObject({ ok: true });
-    await expect(harness.coordinator.handlePopup({ kind: "update-settings", requestId: "update", url: pageUrlWithOtherHash, patch: { kind: "opacity", opacity: 0.7 } })).resolves.toMatchObject({ ok: true });
-    await expect(harness.coordinator.handlePopup({ kind: "clear-site", requestId: "clear", url: pageUrlWithOtherHash })).resolves.toEqual({ requestId: "clear", ok: true, value: undefined });
+    await expect(
+      harness.coordinator.handlePopup({
+        kind: "get-tab-state",
+        requestId: "state",
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      harness.coordinator.handlePopup({
+        kind: "register-site",
+        requestId: "register",
+        url: pageUrlWithOtherHash,
+      }),
+    ).resolves.toEqual({ requestId: "register", ok: true, value: snapshot() });
+    await expect(
+      harness.coordinator.handlePopup({
+        kind: "replace-reference",
+        requestId: "replace",
+        url: pageUrlWithOtherHash,
+        reference: imported,
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      harness.coordinator.handlePopup({
+        kind: "update-settings",
+        requestId: "update",
+        url: pageUrlWithOtherHash,
+        patch: { kind: "opacity", opacity: 0.7 },
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      harness.coordinator.handlePopup({
+        kind: "clear-site",
+        requestId: "clear",
+        url: pageUrlWithOtherHash,
+      }),
+    ).resolves.toEqual({ requestId: "clear", ok: true, value: undefined });
 
     expect(harness.repository.replaceReference).toHaveBeenCalledOnce();
     expect(harness.repository.updateSettings).toHaveBeenCalledOnce();
     expect(harness.repository.clearOrigin).toHaveBeenCalledOnce();
     expect(harness.siteAccess.ensureForUrl).toHaveBeenCalledOnce();
     expect(harness.siteAccess.injectForUrl).toHaveBeenCalledTimes(2);
-    const [openedUrl, openedTabId] = harness.siteAccess.injectForUrl.mock.calls[0] ?? [];
+    const [openedUrl, openedTabId] =
+      harness.siteAccess.injectForUrl.mock.calls[0] ?? [];
     expect(openedUrl?.toString()).toBe(pageUrl);
     expect(openedTabId).toBe(9);
-    const [registeredUrl, registeredTabId] = harness.siteAccess.injectForUrl.mock.calls[1] ?? [];
+    const [registeredUrl, registeredTabId] =
+      harness.siteAccess.injectForUrl.mock.calls[1] ?? [];
     expect(registeredUrl?.toString()).toBe(pageUrlWithOtherHash);
     expect(registeredTabId).toBe(9);
     expect(harness.siteAccess.unregisterOrigin).toHaveBeenCalledOnce();
-    expect(harness.send.mock.calls.map(([, request]) => request.kind)).toEqual(["hydrate-overlay", "apply-settings", "clear-overlay"]);
+    expect(harness.send.mock.calls.map(([, request]) => request.kind)).toEqual([
+      "hydrate-overlay",
+      "hydrate-overlay",
+      "apply-settings",
+      "clear-overlay",
+    ]);
   });
 
   it("rejects a different canonical page and rechecks the active tab before mutation, delivery, and response", async () => {
     const harness = createCoordinator();
-    await expect(harness.coordinator.handlePopup({ kind: "update-settings", requestId: "wrong", url: otherPageUrl, patch: { kind: "opacity", opacity: 0.7 } })).resolves.toMatchObject({ ok: false, error: { code: "invalid-request" } });
+    await expect(
+      harness.coordinator.handlePopup({
+        kind: "update-settings",
+        requestId: "wrong",
+        url: otherPageUrl,
+        patch: { kind: "opacity", opacity: 0.7 },
+      }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "invalid-request" } });
     expect(harness.repository.updateSettings).not.toHaveBeenCalled();
 
     const originalGetActiveTab = harness.tabs.getActiveTab.bind(harness.tabs);
     let activeReads = 0;
     harness.tabs.getActiveTab = async () => {
       activeReads += 1;
-      return activeReads === 1 ? originalGetActiveTab() : { id: 10, url: otherPageUrl };
+      return activeReads === 1
+        ? originalGetActiveTab()
+        : { id: 10, url: otherPageUrl };
     };
-    await expect(harness.coordinator.handlePopup({ kind: "update-settings", requestId: "moved", url: pageUrl, patch: { kind: "opacity", opacity: 0.7 } })).resolves.toMatchObject({ ok: false, error: { code: "invalid-request" } });
+    await expect(
+      harness.coordinator.handlePopup({
+        kind: "update-settings",
+        requestId: "moved",
+        url: pageUrl,
+        patch: { kind: "opacity", opacity: 0.7 },
+      }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "invalid-request" } });
     expect(harness.repository.updateSettings).not.toHaveBeenCalled();
     expect(harness.send).not.toHaveBeenCalled();
 
@@ -163,9 +328,18 @@ describe("BackgroundCoordinator", () => {
     let responseBoundaryReads = 0;
     afterMutation.tabs.getActiveTab = async () => {
       responseBoundaryReads += 1;
-      return responseBoundaryReads <= 3 ? activeTab : { id: 10, url: otherPageUrl };
+      return responseBoundaryReads <= 3
+        ? activeTab
+        : { id: 10, url: otherPageUrl };
     };
-    await expect(afterMutation.coordinator.handlePopup({ kind: "update-settings", requestId: "after-mutation", url: pageUrl, patch: { kind: "opacity", opacity: 0.7 } })).resolves.toMatchObject({ ok: false, error: { code: "invalid-request" } });
+    await expect(
+      afterMutation.coordinator.handlePopup({
+        kind: "update-settings",
+        requestId: "after-mutation",
+        url: pageUrl,
+        patch: { kind: "opacity", opacity: 0.7 },
+      }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "invalid-request" } });
     expect(afterMutation.repository.updateSettings).toHaveBeenCalledOnce();
     expect(afterMutation.send).not.toHaveBeenCalled();
   });
@@ -182,13 +356,23 @@ describe("BackgroundCoordinator", () => {
       return { ok: true, value: undefined };
     });
 
-    await expect(harness.coordinator.handlePopup({ kind: "register-site", requestId: "register", url: pageUrl })).resolves.toEqual({ requestId: "register", ok: true, value: snapshot() });
+    await expect(
+      harness.coordinator.handlePopup({
+        kind: "register-site",
+        requestId: "register",
+        url: pageUrl,
+      }),
+    ).resolves.toEqual({ requestId: "register", ok: true, value: snapshot() });
     expect(harness.siteAccess.injectForUrl).toHaveBeenCalledOnce();
-    const [injectedUrl, injectedTabId] = harness.siteAccess.injectForUrl.mock.calls[0] ?? [];
+    const [injectedUrl, injectedTabId] =
+      harness.siteAccess.injectForUrl.mock.calls[0] ?? [];
     expect(injectedUrl?.toString()).toBe(pageUrl);
     expect(injectedTabId).toBe(9);
     expect(order).toEqual(["ensure", "inject"]);
-    expect(harness.send).not.toHaveBeenCalled();
+    expect(harness.send).toHaveBeenCalledWith(
+      9,
+      expect.objectContaining({ kind: "hydrate-overlay" }),
+    );
 
     const moved = createCoordinator();
     moved.siteAccess.ensureForUrl.mockImplementation(async () => {
@@ -197,29 +381,67 @@ describe("BackgroundCoordinator", () => {
       moved.tabs.tabs.set(9, { id: 9, url: otherPageUrl });
       return { ok: true, value: undefined };
     });
-    await expect(moved.coordinator.handlePopup({ kind: "register-site", requestId: "moved", url: pageUrl })).resolves.toMatchObject({ ok: false, error: { code: "invalid-request" } });
+    await expect(
+      moved.coordinator.handlePopup({
+        kind: "register-site",
+        requestId: "moved",
+        url: pageUrl,
+      }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "invalid-request" } });
     expect(moved.siteAccess.injectForUrl).not.toHaveBeenCalled();
     expect(moved.send).not.toHaveBeenCalled();
   });
 
   it("sends a clear revision newer than both stored and previously delivered state", async () => {
-    const harness = createCoordinator({ currentSnapshot: snapshot({ revision: 7 }) });
-    await expect(harness.coordinator.handlePopup({ kind: "clear-site", requestId: "clear", url: pageUrl })).resolves.toMatchObject({ ok: true });
-    expect(harness.send).toHaveBeenCalledWith(9, { kind: "clear-overlay", revision: 8 });
+    const harness = createCoordinator({
+      currentSnapshot: snapshot({ revision: 7 }),
+    });
+    await expect(
+      harness.coordinator.handlePopup({
+        kind: "clear-site",
+        requestId: "clear",
+        url: pageUrl,
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(harness.send).toHaveBeenCalledWith(9, {
+      kind: "clear-overlay",
+      revision: 8,
+    });
   });
 
   it("clears corrupt stored data by reaching clearOrigin and still delivers a clear", async () => {
     const harness = createCoordinator();
-    harness.repository.readSnapshot.mockResolvedValue({ ok: false, error: new AppError("invalid-stored-data") });
+    harness.repository.readSnapshot.mockResolvedValue({
+      ok: false,
+      error: new AppError("invalid-stored-data"),
+    });
 
-    await expect(harness.coordinator.handlePopup({ kind: "clear-site", requestId: "corrupt", url: pageUrl })).resolves.toEqual({ requestId: "corrupt", ok: true, value: undefined });
+    await expect(
+      harness.coordinator.handlePopup({
+        kind: "clear-site",
+        requestId: "corrupt",
+        url: pageUrl,
+      }),
+    ).resolves.toEqual({ requestId: "corrupt", ok: true, value: undefined });
     expect(harness.repository.clearOrigin).toHaveBeenCalledOnce();
     expect(harness.siteAccess.unregisterOrigin).toHaveBeenCalledOnce();
-    expect(harness.send).toHaveBeenCalledWith(9, { kind: "clear-overlay", revision: 1 });
+    expect(harness.send).toHaveBeenCalledWith(9, {
+      kind: "clear-overlay",
+      revision: 1,
+    });
 
     const storageFailed = createCoordinator();
-    storageFailed.repository.readSnapshot.mockResolvedValue({ ok: false, error: new AppError("storage-failed") });
-    await expect(storageFailed.coordinator.handlePopup({ kind: "clear-site", requestId: "io", url: pageUrl })).resolves.toMatchObject({
+    storageFailed.repository.readSnapshot.mockResolvedValue({
+      ok: false,
+      error: new AppError("storage-failed"),
+    });
+    await expect(
+      storageFailed.coordinator.handlePopup({
+        kind: "clear-site",
+        requestId: "io",
+        url: pageUrl,
+      }),
+    ).resolves.toMatchObject({
       ok: false,
       error: { code: "storage-failed" },
     });
@@ -228,45 +450,121 @@ describe("BackgroundCoordinator", () => {
 
   it("requires current site access before content mutations and only retains matching image diagnostics", async () => {
     const imported = reference();
-    const denied = createCoordinator({ currentSnapshot: snapshot({ reference: imported }), enabled: false });
-    await denied.coordinator.handleContent({ kind: "placement-committed", url: pageUrl, placement: { x: 4, y: 5 } }, { tabId: 9, frameId: 0, url: pageUrl });
-    await denied.coordinator.handleContent({ kind: "image-load-failed", url: pageUrl, referenceId: imported.metadata.id }, { tabId: 9, frameId: 0, url: pageUrl });
+    const denied = createCoordinator({
+      currentSnapshot: snapshot({ reference: imported }),
+      enabled: false,
+    });
+    await denied.coordinator.handleContent(
+      { kind: "placement-committed", url: pageUrl, placement: { x: 4, y: 5 } },
+      { tabId: 9, frameId: 0, url: pageUrl },
+    );
+    await denied.coordinator.handleContent(
+      {
+        kind: "image-load-failed",
+        url: pageUrl,
+        referenceId: imported.metadata.id,
+      },
+      { tabId: 9, frameId: 0, url: pageUrl },
+    );
     expect(denied.repository.updatePlacement).not.toHaveBeenCalled();
     expect(denied.repository.readSnapshot).toHaveBeenCalledOnce();
 
-    const harness = createCoordinator({ currentSnapshot: snapshot({ reference: imported }) });
-    await harness.coordinator.handleContent({ kind: "image-load-failed", url: pageUrl, referenceId: imported.metadata.id }, { tabId: 9, frameId: 0, url: pageUrl });
-    await expect(harness.coordinator.handlePopup({ kind: "get-tab-state", requestId: "matching" })).resolves.toMatchObject({ value: { diagnostic: { referenceId: imported.metadata.id } } });
+    const harness = createCoordinator({
+      currentSnapshot: snapshot({ reference: imported }),
+    });
+    await harness.coordinator.handleContent(
+      {
+        kind: "image-load-failed",
+        url: pageUrl,
+        referenceId: imported.metadata.id,
+      },
+      { tabId: 9, frameId: 0, url: pageUrl },
+    );
+    await expect(
+      harness.coordinator.handlePopup({
+        kind: "get-tab-state",
+        requestId: "matching",
+      }),
+    ).resolves.toMatchObject({
+      value: { diagnostic: { referenceId: imported.metadata.id } },
+    });
 
     const anotherReference = reference("223e4567-e89b-42d3-a456-426614174000");
     harness.setSnapshot(snapshot({ reference: anotherReference }));
-    await expect(harness.coordinator.handlePopup({ kind: "get-tab-state", requestId: "stale" })).resolves.toMatchObject({ value: { diagnostic: null } });
-    await harness.coordinator.handleContent({ kind: "image-load-failed", url: pageUrl, referenceId: imported.metadata.id }, { tabId: 9, frameId: 0, url: pageUrl });
-    await expect(harness.coordinator.handlePopup({ kind: "get-tab-state", requestId: "mismatch" })).resolves.toMatchObject({ value: { diagnostic: null } });
+    await expect(
+      harness.coordinator.handlePopup({
+        kind: "get-tab-state",
+        requestId: "stale",
+      }),
+    ).resolves.toMatchObject({ value: { diagnostic: null } });
+    await harness.coordinator.handleContent(
+      {
+        kind: "image-load-failed",
+        url: pageUrl,
+        referenceId: imported.metadata.id,
+      },
+      { tabId: 9, frameId: 0, url: pageUrl },
+    );
+    await expect(
+      harness.coordinator.handlePopup({
+        kind: "get-tab-state",
+        requestId: "mismatch",
+      }),
+    ).resolves.toMatchObject({ value: { diagnostic: null } });
   });
 
   it("routes complete correlated panel requests from the sender tab without active-tab assumptions", async () => {
     const imported = reference();
-    const harness = createCoordinator({ currentSnapshot: snapshot({ reference: imported }) });
+    const harness = createCoordinator({
+      currentSnapshot: snapshot({ reference: imported }),
+    });
     harness.tabs.active = { id: 10, url: otherPageUrl };
-    await expect(harness.coordinator.handlePanelRequest(
-      { kind: "get-panel-state", requestId: "state" },
-      { tabId: 9, frameId: 0, url: pageUrl },
-    )).resolves.toMatchObject({ requestId: "state", ok: true, value: { pageKey: derivePageKey(new URL(pageUrl)) } });
-    await expect(harness.coordinator.handlePanelRequest(
-      { kind: "update-settings", requestId: "settings", patch: { kind: "inversion", inverted: true } },
-      { tabId: 9, frameId: 0, url: pageUrl },
-    )).resolves.toMatchObject({ requestId: "settings", ok: true, value: { settings: { inverted: true } } });
-    await expect(harness.coordinator.handlePanelRequest(
-      { kind: "replace-reference", requestId: "replace", reference: imported },
-      { tabId: 9, frameId: 0, url: pageUrl },
-    )).resolves.toMatchObject({ requestId: "replace", ok: true });
-    await expect(harness.coordinator.handlePanelRequest(
-      { kind: "clear-site", requestId: "clear" },
-      { tabId: 9, frameId: 0, url: pageUrl },
-    )).resolves.toEqual({ requestId: "clear", ok: true, value: undefined });
-    expect(harness.repository.updateSettings).toHaveBeenCalledWith(expect.objectContaining({ url: new URL(pageUrl) }));
-    expect(harness.repository.replaceReference).toHaveBeenCalledWith(expect.objectContaining({ url: new URL(pageUrl), reference: imported }));
+    await expect(
+      harness.coordinator.handlePanelRequest(
+        { kind: "get-panel-state", requestId: "state" },
+        { tabId: 9, frameId: 0, url: pageUrl },
+      ),
+    ).resolves.toMatchObject({
+      requestId: "state",
+      ok: true,
+      value: { pageKey: derivePageKey(new URL(pageUrl)) },
+    });
+    await expect(
+      harness.coordinator.handlePanelRequest(
+        {
+          kind: "update-settings",
+          requestId: "settings",
+          patch: { kind: "inversion", inverted: true },
+        },
+        { tabId: 9, frameId: 0, url: pageUrl },
+      ),
+    ).resolves.toMatchObject({
+      requestId: "settings",
+      ok: true,
+      value: { settings: { inverted: true } },
+    });
+    await expect(
+      harness.coordinator.handlePanelRequest(
+        {
+          kind: "replace-reference",
+          requestId: "replace",
+          reference: imported,
+        },
+        { tabId: 9, frameId: 0, url: pageUrl },
+      ),
+    ).resolves.toMatchObject({ requestId: "replace", ok: true });
+    await expect(
+      harness.coordinator.handlePanelRequest(
+        { kind: "clear-site", requestId: "clear" },
+        { tabId: 9, frameId: 0, url: pageUrl },
+      ),
+    ).resolves.toEqual({ requestId: "clear", ok: true, value: undefined });
+    expect(harness.repository.updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ url: new URL(pageUrl) }),
+    );
+    expect(harness.repository.replaceReference).toHaveBeenCalledWith(
+      expect.objectContaining({ url: new URL(pageUrl), reference: imported }),
+    );
     expect(harness.repository.clearOrigin).toHaveBeenCalledOnce();
     expect(harness.siteAccess.unregisterOrigin).toHaveBeenCalledOnce();
   });
@@ -274,45 +572,90 @@ describe("BackgroundCoordinator", () => {
   it("accepts correlated panel-position requests only from the current top-frame sender", async () => {
     const harness = createCoordinator();
     const response = await harness.coordinator.handlePanelRequest(
-      { kind: "update-panel-position", requestId: "panel-1", panelPosition: { x: 25, y: 40 } },
+      {
+        kind: "update-panel-position",
+        requestId: "panel-1",
+        panelPosition: { x: 25, y: 40 },
+      },
       { tabId: 9, frameId: 0, url: pageUrl },
     );
-    expect(response).toMatchObject({ requestId: "panel-1", ok: true, value: { panelPosition: { x: 25, y: 40 } } });
+    expect(response).toMatchObject({
+      requestId: "panel-1",
+      ok: true,
+      value: { panelPosition: { x: 25, y: 40 } },
+    });
     expect(harness.repository.updatePanelPosition).toHaveBeenCalledWith({
       url: new URL(pageUrl),
       panelPosition: { x: 25, y: 40 },
     });
 
     const rejected = await harness.coordinator.handlePanelRequest(
-      { kind: "update-panel-position", requestId: "nested", panelPosition: { x: 1, y: 2 } },
+      {
+        kind: "update-panel-position",
+        requestId: "nested",
+        panelPosition: { x: 1, y: 2 },
+      },
       { tabId: 9, frameId: 1, url: pageUrl },
     );
-    expect(rejected).toMatchObject({ requestId: "nested", ok: false, error: { code: "invalid-request" } });
+    expect(rejected).toMatchObject({
+      requestId: "nested",
+      ok: false,
+      error: { code: "invalid-request" },
+    });
     expect(harness.repository.updatePanelPosition).toHaveBeenCalledOnce();
   });
 
   it("hydrates only current, enabled content and suppresses repository failures and closed tabs", async () => {
     const harness = createCoordinator();
-    await harness.coordinator.handleContent({ kind: "content-ready", url: pageUrl }, { tabId: 9, frameId: 0, url: pageUrl });
+    await harness.coordinator.handleContent(
+      { kind: "content-ready", url: pageUrl },
+      { tabId: 9, frameId: 0, url: pageUrl },
+    );
     expect(harness.repository.readHydration).toHaveBeenCalledOnce();
-    expect(harness.send).toHaveBeenCalledWith(9, expect.objectContaining({ kind: "hydrate-overlay" }));
+    expect(harness.send).toHaveBeenCalledWith(
+      9,
+      expect.objectContaining({ kind: "hydrate-overlay" }),
+    );
 
-    harness.repository.readHydration.mockResolvedValueOnce({ ok: false, error: new AppError("storage-failed") });
-    await harness.coordinator.handleContent({ kind: "content-ready", url: pageUrl }, { tabId: 9, frameId: 0, url: pageUrl });
+    harness.repository.readHydration.mockResolvedValueOnce({
+      ok: false,
+      error: new AppError("storage-failed"),
+    });
+    await harness.coordinator.handleContent(
+      { kind: "content-ready", url: pageUrl },
+      { tabId: 9, frameId: 0, url: pageUrl },
+    );
     expect(harness.send).toHaveBeenCalledOnce();
 
     harness.tabs.tabs.delete(9);
-    await harness.coordinator.handleContent({ kind: "content-ready", url: pageUrl }, { tabId: 9, frameId: 0, url: pageUrl });
+    await harness.coordinator.handleContent(
+      { kind: "content-ready", url: pageUrl },
+      { tabId: 9, frameId: 0, url: pageUrl },
+    );
     expect(harness.repository.readHydration).toHaveBeenCalledTimes(2);
   });
 
   it("gates popup reference and settings mutations on current site access", async () => {
     const harness = createCoordinator({ enabled: false });
-    await expect(harness.coordinator.handlePopup({ kind: "replace-reference", requestId: "replace", url: pageUrl, reference: reference() })).resolves.toMatchObject({
+    await expect(
+      harness.coordinator.handlePopup({
+        kind: "replace-reference",
+        requestId: "replace",
+        url: pageUrl,
+        reference: reference(),
+      }),
+    ).resolves.toMatchObject({
       ok: false,
       error: { code: "site-access-revoked" },
     });
-    await expect(harness.coordinator.handlePopup({ kind: "update-settings", requestId: "settings", url: pageUrl, patch: { kind: "opacity", opacity: 0.7 } })).resolves.toMatchObject({
+    await expect(
+      harness.coordinator.handlePopup({
+        kind: "update-settings",
+        requestId: "settings",
+        url: pageUrl,
+        patch: { kind: "opacity", opacity: 0.7 },
+      }),
+    ).resolves.toMatchObject({
       ok: false,
       error: { code: "site-access-revoked" },
     });
@@ -321,48 +664,95 @@ describe("BackgroundCoordinator", () => {
   });
 
   it("delivers lower revisions after the same tab navigates to a different canonical page", async () => {
-    const harness = createCoordinator({ currentSnapshot: snapshot({ revision: 7 }) });
-    await expect(harness.coordinator.handlePopup({ kind: "update-settings", requestId: "first", url: pageUrl, patch: { kind: "opacity", opacity: 0.7 } })).resolves.toMatchObject({ ok: true });
+    const harness = createCoordinator({
+      currentSnapshot: snapshot({ revision: 7 }),
+    });
+    await expect(
+      harness.coordinator.handlePopup({
+        kind: "update-settings",
+        requestId: "first",
+        url: pageUrl,
+        patch: { kind: "opacity", opacity: 0.7 },
+      }),
+    ).resolves.toMatchObject({ ok: true });
     harness.tabs.active = { id: 9, url: otherPageUrl };
     harness.tabs.tabs.set(9, { id: 9, url: otherPageUrl });
     harness.setSnapshot(snapshot({ revision: 0, url: otherPageUrl }));
 
-    await expect(harness.coordinator.handlePopup({ kind: "update-settings", requestId: "second", url: otherPageUrl, patch: { kind: "opacity", opacity: 0.6 } })).resolves.toMatchObject({ ok: true });
+    await expect(
+      harness.coordinator.handlePopup({
+        kind: "update-settings",
+        requestId: "second",
+        url: otherPageUrl,
+        patch: { kind: "opacity", opacity: 0.6 },
+      }),
+    ).resolves.toMatchObject({ ok: true });
     expect(harness.send).toHaveBeenCalledTimes(2);
-    expect(harness.send).toHaveBeenLastCalledWith(9, expect.objectContaining({
-      kind: "apply-settings",
-      snapshot: expect.objectContaining({ revision: 1, pageKey: derivePageKey(new URL(otherPageUrl)) }),
-    }));
+    expect(harness.send).toHaveBeenLastCalledWith(
+      9,
+      expect.objectContaining({
+        kind: "apply-settings",
+        snapshot: expect.objectContaining({
+          revision: 1,
+          pageKey: derivePageKey(new URL(otherPageUrl)),
+        }),
+      }),
+    );
   });
 
   it("best-effort clears removed-origin overlays before independent cleanup and reconciliation", async () => {
-    const harness = createCoordinator({ currentSnapshot: snapshot({ revision: 7 }) });
+    const harness = createCoordinator({
+      currentSnapshot: snapshot({ revision: 7 }),
+    });
     harness.send.mockRejectedValueOnce(new Error("The tab was closed."));
-    harness.repository.cleanupOrphans.mockRejectedValueOnce(new Error("cleanup failed"));
-    harness.siteAccess.reconcile.mockRejectedValueOnce(new Error("reconcile failed"));
+    harness.repository.cleanupOrphans.mockRejectedValueOnce(
+      new Error("cleanup failed"),
+    );
+    harness.siteAccess.reconcile.mockRejectedValueOnce(
+      new Error("reconcile failed"),
+    );
 
-    await expect(harness.coordinator.handlePermissionsRemoved(["https://example.test"])).resolves.toBeUndefined();
-    expect(harness.send).toHaveBeenCalledWith(9, { kind: "clear-overlay", revision: 8 });
+    await expect(
+      harness.coordinator.handlePermissionsRemoved(["https://example.test"]),
+    ).resolves.toBeUndefined();
+    expect(harness.send).toHaveBeenCalledWith(9, {
+      kind: "clear-overlay",
+      revision: 8,
+    });
     expect(harness.repository.cleanupOrphans).toHaveBeenCalledOnce();
     expect(harness.siteAccess.reconcile).toHaveBeenCalledOnce();
   });
 
   it("ignores content events from other frames, URLs, and navigated tabs", async () => {
     const harness = createCoordinator();
-    await harness.coordinator.handleContent({ kind: "placement-committed", url: pageUrl, placement: { x: 4, y: 5 } }, { tabId: 9, frameId: 1, url: pageUrl });
-    await harness.coordinator.handleContent({ kind: "placement-committed", url: pageUrl, placement: { x: 4, y: 5 } }, { tabId: 9, frameId: 0, url: otherPageUrl });
+    await harness.coordinator.handleContent(
+      { kind: "placement-committed", url: pageUrl, placement: { x: 4, y: 5 } },
+      { tabId: 9, frameId: 1, url: pageUrl },
+    );
+    await harness.coordinator.handleContent(
+      { kind: "placement-committed", url: pageUrl, placement: { x: 4, y: 5 } },
+      { tabId: 9, frameId: 0, url: otherPageUrl },
+    );
     harness.tabs.tabs.set(9, { id: 9, url: otherPageUrl });
-    await harness.coordinator.handleContent({ kind: "placement-committed", url: pageUrl, placement: { x: 4, y: 5 } }, { tabId: 9, frameId: 0, url: pageUrl });
+    await harness.coordinator.handleContent(
+      { kind: "placement-committed", url: pageUrl, placement: { x: 4, y: 5 } },
+      { tabId: 9, frameId: 0, url: pageUrl },
+    );
     expect(harness.repository.updatePlacement).not.toHaveBeenCalled();
     expect(harness.siteAccess.has).not.toHaveBeenCalled();
   });
 
   it("toggles and nudges only a permitted active tab that has a reference", async () => {
     const imported = reference();
-    const harness = createCoordinator({ currentSnapshot: {
-      ...snapshot({ reference: imported }),
-      settings: { ...snapshot({ reference: imported }).settings, placement: { x: 8, y: -3 } },
-    } });
+    const harness = createCoordinator({
+      currentSnapshot: {
+        ...snapshot({ reference: imported }),
+        settings: {
+          ...snapshot({ reference: imported }).settings,
+          placement: { x: 8, y: -3 },
+        },
+      },
+    });
 
     await harness.coordinator.handleCommand("toggle-visibility");
     await harness.coordinator.handleCommand("nudge-left");
@@ -370,7 +760,11 @@ describe("BackgroundCoordinator", () => {
     await harness.coordinator.handleCommand("nudge-up");
     await harness.coordinator.handleCommand("nudge-down");
 
-    expect(harness.repository.updateSettings.mock.calls.map(([input]) => input.patch)).toEqual([
+    expect(
+      harness.repository.updateSettings.mock.calls.map(
+        ([input]) => input.patch,
+      ),
+    ).toEqual([
       { kind: "visibility", visible: false },
       { kind: "placement", placement: { x: 7, y: -3 } },
       { kind: "placement", placement: { x: 8, y: -3 } },
@@ -378,56 +772,112 @@ describe("BackgroundCoordinator", () => {
       { kind: "placement", placement: { x: 8, y: -3 } },
     ]);
     expect(harness.send.mock.calls.map(([, request]) => request.kind)).toEqual([
-      "apply-settings", "apply-settings", "apply-settings", "apply-settings", "apply-settings",
+      "apply-settings",
+      "apply-settings",
+      "apply-settings",
+      "apply-settings",
+      "apply-settings",
     ]);
 
     const missingReference = createCoordinator();
     await missingReference.coordinator.handleCommand("nudge-left");
     expect(missingReference.repository.updateSettings).not.toHaveBeenCalled();
-    const denied = createCoordinator({ currentSnapshot: snapshot({ reference: imported }), enabled: false });
+    const denied = createCoordinator({
+      currentSnapshot: snapshot({ reference: imported }),
+      enabled: false,
+    });
     await denied.coordinator.handleCommand("toggle-visibility");
     expect(denied.repository.updateSettings).not.toHaveBeenCalled();
   });
 
   it("uses page snapshots for top-frame SPA navigation and ignores hash-only and stale races", async () => {
     const imported = reference();
-    const harness = createCoordinator({ currentSnapshot: snapshot({ revision: 5 }) });
-    await harness.coordinator.handlePopup({ kind: "replace-reference", requestId: "reference", url: pageUrl, reference: imported });
-    await harness.coordinator.handleContent({ kind: "content-ready", url: pageUrl }, { tabId: 9, frameId: 0, url: pageUrl });
+    const harness = createCoordinator({
+      currentSnapshot: snapshot({ revision: 5 }),
+    });
+    await harness.coordinator.handlePopup({
+      kind: "replace-reference",
+      requestId: "reference",
+      url: pageUrl,
+      reference: imported,
+    });
+    await harness.coordinator.handleContent(
+      { kind: "content-ready", url: pageUrl },
+      { tabId: 9, frameId: 0, url: pageUrl },
+    );
     const routeUrl = "https://example.test/other?mode=grid";
     harness.tabs.active = { id: 9, url: routeUrl };
     harness.tabs.tabs.set(9, { id: 9, url: routeUrl });
     harness.setSnapshot({
       ...snapshot({ reference: imported, revision: 2, url: routeUrl }),
-      settings: { ...snapshot({ reference: imported, revision: 2, url: routeUrl }).settings, placement: { x: 21, y: -34 } },
+      settings: {
+        ...snapshot({ reference: imported, revision: 2, url: routeUrl })
+          .settings,
+        placement: { x: 21, y: -34 },
+      },
     });
-    await harness.coordinator.handleNavigation({ tabId: 9, frameId: 0, url: routeUrl });
-    expect(harness.send).toHaveBeenLastCalledWith(9, expect.objectContaining({
-      kind: "apply-settings",
-      snapshot: expect.objectContaining({ pageKey: derivePageKey(new URL(routeUrl)), settings: expect.objectContaining({ placement: { x: 21, y: -34 } }) }),
-    }));
+    await harness.coordinator.handleNavigation({
+      tabId: 9,
+      frameId: 0,
+      url: routeUrl,
+    });
+    expect(harness.send).toHaveBeenLastCalledWith(
+      9,
+      expect.objectContaining({
+        kind: "apply-settings",
+        snapshot: expect.objectContaining({
+          pageKey: derivePageKey(new URL(routeUrl)),
+          settings: expect.objectContaining({ placement: { x: 21, y: -34 } }),
+        }),
+      }),
+    );
 
     const sendsAfterRoute = harness.send.mock.calls.length;
-    await harness.coordinator.handleNavigation({ tabId: 9, frameId: 0, url: `${routeUrl}#section` });
+    await harness.coordinator.handleNavigation({
+      tabId: 9,
+      frameId: 0,
+      url: `${routeUrl}#section`,
+    });
     expect(harness.send).toHaveBeenCalledTimes(sendsAfterRoute);
 
     harness.repository.readSnapshot.mockImplementationOnce(async () => {
       harness.tabs.tabs.set(9, { id: 9, url: otherPageUrl });
-      return { ok: true as const, value: snapshot({ reference: imported, url: routeUrl }) };
+      return {
+        ok: true as const,
+        value: snapshot({ reference: imported, url: routeUrl }),
+      };
     });
-    await harness.coordinator.handleNavigation({ tabId: 9, frameId: 0, url: routeUrl });
+    await harness.coordinator.handleNavigation({
+      tabId: 9,
+      frameId: 0,
+      url: routeUrl,
+    });
     expect(harness.send).toHaveBeenCalledTimes(sendsAfterRoute);
   });
 
   it("rehydrates after content reload and runs persistent-state recovery on service-worker startup", async () => {
     const imported = reference();
     const harness = createCoordinator();
-    await harness.coordinator.handlePopup({ kind: "replace-reference", requestId: "reference", url: pageUrl, reference: imported });
+    await harness.coordinator.handlePopup({
+      kind: "replace-reference",
+      requestId: "reference",
+      url: pageUrl,
+      reference: imported,
+    });
     harness.send.mockClear();
 
-    await harness.coordinator.handleContent({ kind: "content-ready", url: pageUrl }, { tabId: 9, frameId: 0, url: pageUrl });
-    await harness.coordinator.handleContent({ kind: "content-ready", url: pageUrl }, { tabId: 9, frameId: 0, url: pageUrl });
-    expect(harness.send.mock.calls.map(([, request]) => request.kind)).toEqual(["hydrate-overlay", "hydrate-overlay"]);
+    await harness.coordinator.handleContent(
+      { kind: "content-ready", url: pageUrl },
+      { tabId: 9, frameId: 0, url: pageUrl },
+    );
+    await harness.coordinator.handleContent(
+      { kind: "content-ready", url: pageUrl },
+      { tabId: 9, frameId: 0, url: pageUrl },
+    );
+    expect(harness.send.mock.calls.map(([, request]) => request.kind)).toEqual([
+      "hydrate-overlay",
+      "hydrate-overlay",
+    ]);
 
     await harness.coordinator.startup();
     expect(harness.repository.cleanupOrphans).toHaveBeenCalledOnce();

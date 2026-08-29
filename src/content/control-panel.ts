@@ -62,7 +62,6 @@ type PanelElements = Readonly<{
   reference: HTMLElement;
   live: HTMLElement;
   file: HTMLInputElement;
-  toggleVisibility: HTMLButtonElement;
   visible: HTMLInputElement;
   opacity: HTMLInputElement;
   opacityOutput: HTMLOutputElement;
@@ -113,7 +112,6 @@ export class ControlPanel {
     );
     e.handle.addEventListener("dragstart", preventDefault);
     e.file.addEventListener("change", this.#handleFile);
-    e.toggleVisibility.addEventListener("click", this.#handleToggleVisibility);
     e.visible.addEventListener("change", this.#handleVisibility);
     e.opacity.addEventListener("input", this.#handleOpacity);
     e.fitWidth.addEventListener("change", this.#handleFitWidth);
@@ -177,10 +175,6 @@ export class ControlPanel {
     const settings = snapshot.settings;
     const disabled = reference === null;
     e.file.disabled = false;
-    e.toggleVisibility.disabled = disabled;
-    e.toggleVisibility.textContent = settings.visible
-      ? "Hide overlay"
-      : "Show overlay";
     e.visible.checked = settings.visible;
     const visibility = this.#host
       ? roots.get(this.#host)?.querySelector<HTMLElement>(".visibility")
@@ -248,11 +242,6 @@ export class ControlPanel {
     }
   }
 
-  #handleToggleVisibility = (): void =>
-    this.#queueSetting({
-      kind: "visibility",
-      visible: !this.#elements.visible.checked,
-    });
   #handleVisibility = (): void =>
     this.#queueSetting({
       kind: "visibility",
@@ -577,11 +566,6 @@ function findOrCreatePanel(
   file.type = "file";
   file.accept = "image/png,image/jpeg,image/webp,image/svg+xml";
   file.setAttribute("aria-label", "Choose or replace reference image");
-  const toggleVisibility = button(
-    document,
-    "toggle-visibility",
-    "Hide overlay",
-  );
   const controls = document.createElement("fieldset");
   controls.className = "controls";
   const legend = document.createElement("legend");
@@ -647,7 +631,6 @@ function findOrCreatePanel(
   content.append(
     reference,
     visibility,
-    toggleVisibility,
     file,
     controls,
     clear,
@@ -661,7 +644,6 @@ function findOrCreatePanel(
     reference,
     live,
     file,
-    toggleVisibility,
     visible,
     opacity,
     opacityOutput,
