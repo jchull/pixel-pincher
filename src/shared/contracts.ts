@@ -114,6 +114,20 @@ export type PopupRequest =
   | Readonly<{ kind: "update-settings"; requestId: string; url: string; patch: SettingsPatch }>
   | Readonly<{ kind: "clear-site"; requestId: string; url: string }>;
 
+export type RenderDiagnostic = Readonly<{
+  referenceId: ReferenceId;
+  error: PublicError;
+}>;
+
+export type TabState = Readonly<{
+  tabId: number;
+  url: string;
+  origin: Origin;
+  enabled: boolean;
+  snapshot: OverlaySnapshot;
+  diagnostic: RenderDiagnostic | null;
+}>;
+
 export type PopupResponse<T> =
   | Readonly<{ requestId: string; ok: true; value: T }>
   | Readonly<{ requestId: string; ok: false; error: PublicError }>;

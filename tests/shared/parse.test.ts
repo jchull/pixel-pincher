@@ -26,6 +26,7 @@ import {
   parseSettingsPatch,
   parseSizing,
   parseSupportedUrl,
+  parseTabState,
 } from "../../src/shared/parse";
 
 const id = "123e4567-e89b-42d3-a456-426614174000";
@@ -150,6 +151,26 @@ describe("boundary parsers", () => {
     expect(parseContentEvent({ kind: "placement-committed", url: "https://example.com/page", placement: { x: -1_000_000, y: 1_000_000 } }).ok).toBe(true);
     expect(parseContentEvent({ kind: "image-load-failed", url: "https://example.com/page", referenceId: id }).ok).toBe(true);
     expect(parseContentEvent({ kind: "placement-committed", url: "https://example.com/page", placement: { x: 1_000_001, y: 0 } }).ok).toBe(false);
+  });
+
+  it("parses only reference-aware render diagnostics in tab state", () => {
+    const diagnostic = { referenceId: id, error: publicError("image-render-failed") };
+    expect(parseTabState({
+      tabId: 3,
+      url: "https://example.com/page",
+      origin: "https://example.com",
+      enabled: true,
+      snapshot,
+      diagnostic,
+    }).ok).toBe(true);
+    expect(parseTabState({
+      tabId: 3,
+      url: "https://example.com/page",
+      origin: "https://example.com",
+      enabled: true,
+      snapshot,
+      diagnostic: { ...diagnostic, error: publicError("storage-failed") },
+    }).ok).toBe(false);
   });
 
   it("parses canonical popup responses and every request variant", () => {

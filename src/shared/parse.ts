@@ -23,8 +23,10 @@ import {
   type ReferenceId,
   type ReferenceMetadata,
   type Result,
+  type RenderDiagnostic,
   type SettingsPatch,
   type Sizing,
+  type TabState,
   MAX_IMAGE_ENCODED_BYTES,
   MAX_IMAGE_PIXELS,
   MAX_PLACEMENT,
@@ -303,6 +305,43 @@ export function parsePublicError(value: unknown): Result<PublicError, PublicErro
   const code = value.code;
   if (value.message !== PUBLIC_ERROR_MESSAGES[code]) return failure("invalid-request");
   return { ok: true, value: publicError(code) };
+}
+
+export function parseTabState(value: unknown): Result<TabState, PublicError> {
+  if (!isOwnDataRecord(value) || !hasExactKeys(value, ["tabId", "url", "origin", "enabled", "snapshot", "diagnostic"])) {
+    return failure("invalid-request");
+  }
+  const tabId = readSafeInteger(value.tabId);
+  const url = parseSupportedUrl(value.url);
+  const origin = parseOrigin(value.origin);
+  const snapshot = parseSnapshotValue(value.snapshot, "invalid-request");
+  const diagnostic = value.diagnostic === null
+    ? { ok: true as const, value: null }
+    : parseRenderDiagnostic(value.diagnostic);
+  if (tabId === undefined || tabId < 0 || !url.ok || !origin.ok || typeof value.enabled !== "boolean" ||
+    !snapshot.ok || snapshot.value.origin !== origin.value || deriveOrigin(url.value) !== origin.value ||
+    !diagnostic.ok || (diagnostic.value !== null && diagnostic.value.error.code !== "image-render-failed")) {
+    return failure("invalid-request");
+  }
+  return {
+    ok: true,
+    value: {
+      tabId,
+      url: url.value.toString(),
+      origin: origin.value,
+      enabled: value.enabled,
+      snapshot: snapshot.value,
+      diagnostic: diagnostic.value,
+    },
+  };
+}
+
+function parseRenderDiagnostic(value: unknown): Result<RenderDiagnostic, PublicError> {
+  if (!isOwnDataRecord(value) || !hasExactKeys(value, ["referenceId", "error"])) return failure("invalid-request");
+  const referenceId = parseReferenceId(value.referenceId);
+  const error = parsePublicError(value.error);
+  if (!referenceId.ok || !error.ok || error.value.code !== "image-render-failed") return failure("invalid-request");
+  return { ok: true, value: { referenceId: referenceId.value, error: error.value } };
 }
 
 export function parsePopupResponse<T>(value: unknown, parseValue: ValueParser<T>): Result<PopupResponse<T>, PublicError> {

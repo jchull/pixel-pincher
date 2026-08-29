@@ -3,10 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const lifecycle = vi.hoisted(() => {
   const installedListeners: Array<() => void> = [];
   const permissionRemovedListeners: Array<() => void> = [];
+  const messageListeners: Array<() => void> = [];
   const startupListeners: Array<() => void> = [];
 
   return {
+    cleanupOrphans: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
     installedListeners,
+    messageListeners,
     permissionRemovedListeners,
     reconcile: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
     startupListeners,
@@ -21,7 +24,9 @@ vi.mock("wxt/utils/define-background", () => ({
 }));
 
 vi.mock("../../src/background/repository", () => ({
-  OverlayRepository: class {},
+  OverlayRepository: class {
+    cleanupOrphans = lifecycle.cleanupOrphans;
+  },
 }));
 
 vi.mock("../../src/background/site-access", () => ({
@@ -36,7 +41,9 @@ vi.mock("../../src/background/storage-adapter", () => ({
 }));
 
 beforeEach(() => {
+  lifecycle.cleanupOrphans.mockClear();
   lifecycle.installedListeners.length = 0;
+  lifecycle.messageListeners.length = 0;
   lifecycle.permissionRemovedListeners.length = 0;
   lifecycle.reconcile.mockClear();
   lifecycle.startupListeners.length = 0;
@@ -52,6 +59,11 @@ beforeEach(() => {
         },
       },
       runtime: {
+        onMessage: {
+          addListener(listener: () => void) {
+            lifecycle.messageListeners.push(listener);
+          },
+        },
         onInstalled: {
           addListener(listener: () => void) {
             lifecycle.installedListeners.push(listener);
@@ -75,11 +87,15 @@ describe("background entrypoint lifecycle", () => {
     expect(lifecycle.startupListeners).toHaveLength(1);
     expect(lifecycle.installedListeners).toHaveLength(1);
     expect(lifecycle.permissionRemovedListeners).toHaveLength(1);
+    expect(lifecycle.messageListeners).toHaveLength(1);
 
     for (const listener of lifecycle.startupListeners) listener();
     for (const listener of lifecycle.installedListeners) listener();
     for (const listener of lifecycle.permissionRemovedListeners) listener();
+    await Promise.resolve();
+    await Promise.resolve();
 
+    expect(lifecycle.cleanupOrphans).toHaveBeenCalledTimes(3);
     expect(lifecycle.reconcile).toHaveBeenCalledTimes(3);
   });
 });
