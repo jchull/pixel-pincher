@@ -191,6 +191,24 @@ describe("BackgroundCoordinator", () => {
     expect(harness.send).toHaveBeenCalledWith(9, { kind: "clear-overlay", revision: 8 });
   });
 
+  it("clears corrupt stored data by reaching clearOrigin and still delivers a clear", async () => {
+    const harness = createCoordinator();
+    harness.repository.readSnapshot.mockResolvedValue({ ok: false, error: new AppError("invalid-stored-data") });
+
+    await expect(harness.coordinator.handlePopup({ kind: "clear-site", requestId: "corrupt", url: pageUrl })).resolves.toEqual({ requestId: "corrupt", ok: true, value: undefined });
+    expect(harness.repository.clearOrigin).toHaveBeenCalledOnce();
+    expect(harness.siteAccess.unregisterOrigin).toHaveBeenCalledOnce();
+    expect(harness.send).toHaveBeenCalledWith(9, { kind: "clear-overlay", revision: 1 });
+
+    const storageFailed = createCoordinator();
+    storageFailed.repository.readSnapshot.mockResolvedValue({ ok: false, error: new AppError("storage-failed") });
+    await expect(storageFailed.coordinator.handlePopup({ kind: "clear-site", requestId: "io", url: pageUrl })).resolves.toMatchObject({
+      ok: false,
+      error: { code: "storage-failed" },
+    });
+    expect(storageFailed.repository.clearOrigin).not.toHaveBeenCalled();
+  });
+
   it("requires current site access before content mutations and only retains matching image diagnostics", async () => {
     const imported = reference();
     const denied = createCoordinator({ currentSnapshot: snapshot({ reference: imported }), enabled: false });

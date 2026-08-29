@@ -193,8 +193,12 @@ export class BackgroundCoordinator {
 
     if (request.kind === "clear-site") {
       const snapshot = await this.#repository.readSnapshot(requested.value);
-      if (!snapshot.ok) return failure(request.requestId, snapshot.error);
-      const latest = Math.max(snapshot.value.revision, this.#deliveredRevisionFor(active.id, requested.value));
+      // Corrupt stored data cannot be read back, but the clear must still reach
+      // the repository; fall back to the last delivered revision for the overlay message.
+      let latest: number;
+      if (snapshot.ok) latest = Math.max(snapshot.value.revision, this.#deliveredRevisionFor(active.id, requested.value));
+      else if (snapshot.error.code === "invalid-stored-data") latest = this.#deliveredRevisionFor(active.id, requested.value);
+      else return failure(request.requestId, snapshot.error);
       const revision = nextRevision(latest);
       if (revision === undefined) return failure(request.requestId, new AppError("invalid-stored-data"));
       if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));

@@ -1,6 +1,6 @@
 import { createImportReference } from "../../src/popup/import-reference";
 import { PopupController, type PopupRuntimeAdapter, type PopupState, type PopupView } from "../../src/popup/popup-controller";
-import type { TabState } from "../../src/shared/contracts";
+import { MAX_PLACEMENT, MIN_PLACEMENT, type TabState } from "../../src/shared/contracts";
 import "./style.css";
 
 function escapeHtml(value: string): string {
@@ -17,6 +17,7 @@ function controls(tab: TabState, confirmingClear: boolean): string {
   const disabled = reference === null ? " disabled" : "";
   const opacity = Math.round(settings.opacity * 100);
   const manualScale = settings.sizing.kind === "fit-width" ? settings.sizing.lastScalePercent : settings.sizing.percent;
+  const diagnostic = tab.diagnostic === null ? "" : `<p class="diagnostic">${escapeHtml(tab.diagnostic.error.message)}</p>`;
   return `
     <section aria-labelledby="reference-heading">
       <h2 id="reference-heading">Reference</h2>
@@ -24,6 +25,7 @@ function controls(tab: TabState, confirmingClear: boolean): string {
       <input id="reference-file" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" />
       <button id="replace-reference" type="button" disabled>Replace reference</button>
       ${reference === null ? "<p>No reference selected.</p>" : `<p>${escapeHtml(reference.name)} (${reference.width} × ${reference.height})</p>`}
+      ${diagnostic}
     </section>
     <fieldset${disabled}>
       <legend>Overlay controls</legend>
@@ -41,24 +43,30 @@ function controls(tab: TabState, confirmingClear: boolean): string {
         <label><input id="interaction-click-through" name="interaction" value="click-through" type="radio" ${settings.interactionMode === "click-through" ? "checked" : ""} /> Click-through</label>
         <label><input id="interaction-drag" name="interaction" value="drag" type="radio" ${settings.interactionMode === "drag" ? "checked" : ""} /> Drag</label>
       </fieldset>
-      <label for="x">X position</label><input id="x" type="number" value="${settings.placement.x}" step="1" />
-      <label for="y">Y position</label><input id="y" type="number" value="${settings.placement.y}" step="1" />
+      <label for="x">X position</label><input id="x" type="number" min="${MIN_PLACEMENT}" max="${MAX_PLACEMENT}" value="${settings.placement.x}" step="1" />
+      <label for="y">Y position</label><input id="y" type="number" min="${MIN_PLACEMENT}" max="${MAX_PLACEMENT}" value="${settings.placement.y}" step="1" />
     </fieldset>
     <section aria-labelledby="clear-heading"><h2 id="clear-heading">Site data</h2>
       ${confirmingClear ? '<p>Clear this site’s image and settings?</p><button id="confirm-clear" type="button">Confirm clear</button><button id="cancel-clear" type="button">Cancel</button>' : '<button id="clear-site" type="button">Clear site data</button>'}
     </section>`;
 }
 
+/** The only live region in the popup: status and error announcements go here. */
+function statusRegion(state: PopupState): string {
+  const message = state.kind === "error" ? `<span class="error">${escapeHtml(state.error.message)}</span>` : "";
+  return `<div id="popup-status" role="status" aria-live="polite">${message}</div>`;
+}
+
 function markup(state: PopupState): string {
   const current = recovery(state);
-  const message = state.kind === "error" ? `<p class="error" role="alert">${escapeHtml(state.error.message)}</p>` : "";
-  if (current.kind === "loading") return "<h1>Pixel Pincher</h1><p>Loading…</p>";
-  if (current.kind === "unsupported") return "<h1>Pixel Pincher</h1><p>This page cannot use Pixel Pincher.</p>";
+  const status = statusRegion(state);
+  if (current.kind === "loading") return `<h1>Pixel Pincher</h1>${status}<p>Loading…</p>`;
+  if (current.kind === "unsupported") return `<h1>Pixel Pincher</h1>${status}<p>This page cannot use Pixel Pincher.</p>`;
   if (current.kind === "access-required") {
     const corruptDataClear = state.kind === "error" && state.error.code === "invalid-stored-data";
-    return `<h1>Pixel Pincher</h1>${message}<p>Enable Pixel Pincher on this site to import and restore a reference.</p><button id="enable-site" type="button">Enable on this site</button>${corruptDataClear ? '<button id="clear-corrupt-site" type="button">Clear site data</button>' : ""}${state.kind === "error" ? '<button id="retry" type="button">Retry</button>' : ""}`;
+    return `<h1>Pixel Pincher</h1>${status}<p>Enable Pixel Pincher on this site to import and restore a reference.</p><button id="enable-site" type="button">Enable on this site</button>${corruptDataClear ? '<button id="clear-corrupt-site" type="button">Clear site data</button>' : ""}${state.kind === "error" ? '<button id="retry" type="button">Retry</button>' : ""}`;
   }
-  return `<h1>Pixel Pincher</h1>${message}${controls(current.tab, current.confirmingClear)}${state.kind === "error" ? '<button id="retry" type="button">Retry</button>' : ""}`;
+  return `<h1>Pixel Pincher</h1>${status}${controls(current.tab, current.confirmingClear)}${state.kind === "error" ? '<button id="retry" type="button">Retry</button>' : ""}`;
 }
 
 function input(root: HTMLElement, id: string): HTMLInputElement | undefined {

@@ -208,4 +208,100 @@ describe("popup controller", () => {
     await harness.controller.clearSite();
     expect(harness.adapter.requests.some((request) => request.kind === "clear-site")).toBe(true);
   });
+
+  it("clamps manual placement at the shared limits before sending it", async () => {
+    const harness = createHarness();
+    await harness.controller.start();
+    harness.controller.commitNumber("x", "1000001", "x");
+    harness.controller.commitNumber("y", "-1000001", "y");
+    await settled();
+    const patches = harness.adapter.requests
+      .filter((request): request is Extract<PopupRequest, { kind: "update-settings" }> => request.kind === "update-settings")
+      .map((request) => request.patch);
+    expect(patches).toContainEqual({ kind: "placement", placement: { x: 1_000_000, y: 0 } });
+    expect(patches).toContainEqual({ kind: "placement", placement: { x: 1_000_000, y: -1_000_000 } });
+  });
+
+  it("builds queued placement changes from the latest intended placement", async () => {
+    const harness = createHarness({ pauseSettings: true });
+    await harness.controller.start();
+    harness.controller.commitNumber("x", "12", "x");
+    harness.controller.commitNumber("y", "34", "y");
+    const first = known(harness.adapter.requests.find((request) => request.kind === "update-settings"), "first placement request");
+    if (first.kind !== "update-settings") throw new Error("settings request expected");
+    harness.adapter.resolveNext?.({ requestId: first.requestId, ok: true, value: snapshot({ settings: { placement: { x: 12, y: 0 } } }) });
+    await settled();
+    const updates = harness.adapter.requests.filter((request): request is Extract<PopupRequest, { kind: "update-settings" }> => request.kind === "update-settings");
+    expect(updates[1]).toMatchObject({ patch: { kind: "placement", placement: { x: 12, y: 34 } } });
+  });
+
+  it("preserves the latest manual scale while a sizing mutation is in flight", async () => {
+    const harness = createHarness({ pauseSettings: true });
+    await harness.controller.start();
+    harness.controller.setSizingPercent(175);
+    harness.controller.setFitWidth(true);
+    const first = known(harness.adapter.requests.find((request) => request.kind === "update-settings"), "first sizing request");
+    if (first.kind !== "update-settings") throw new Error("settings request expected");
+    harness.adapter.resolveNext?.({ requestId: first.requestId, ok: true, value: snapshot({ settings: { sizing: { kind: "scale", percent: 175 } } }) });
+    await settled();
+    const updates = harness.adapter.requests.filter((request): request is Extract<PopupRequest, { kind: "update-settings" }> => request.kind === "update-settings");
+    expect(updates[1]).toMatchObject({ patch: { kind: "sizing", sizing: { kind: "fit-width", lastScalePercent: 175 } } });
+  });
+
+  it("uses a confirmed snapshot rather than a stale sizing intent for the next action", async () => {
+    const harness = createHarness({ pauseSettings: true });
+    await harness.controller.start();
+    harness.controller.setSizingPercent(175);
+    const first = known(harness.adapter.requests.find((request) => request.kind === "update-settings"), "sizing request");
+    if (first.kind !== "update-settings") throw new Error("settings request expected");
+    harness.adapter.resolveNext?.({ requestId: first.requestId, ok: true, value: snapshot({ settings: { sizing: { kind: "scale", percent: 200 } } }) });
+    await settled();
+    harness.controller.setFitWidth(true);
+    await settled();
+    const updates = harness.adapter.requests.filter((request): request is Extract<PopupRequest, { kind: "update-settings" }> => request.kind === "update-settings");
+    expect(updates.at(-1)).toMatchObject({ patch: { kind: "sizing", sizing: { kind: "fit-width", lastScalePercent: 200 } } });
+  });
+
+  it("drops queued settings when the active mutation fails", async () => {
+    const harness = createHarness({ pauseSettings: true });
+    await harness.controller.start();
+    harness.controller.commitNumber("x", "12", "x");
+    harness.controller.commitNumber("y", "34", "y");
+    const first = known(harness.adapter.requests.find((request) => request.kind === "update-settings"), "first placement request");
+    if (first.kind !== "update-settings") throw new Error("settings request expected");
+    harness.adapter.resolveNext?.({ requestId: first.requestId, ok: false, error: { code: "storage-failed", message: "Pixel Pincher could not save this change." } });
+    await settled();
+    expect(harness.controller.state).toMatchObject({ kind: "error", error: { code: "storage-failed" } });
+    expect(harness.adapter.requests.filter((request) => request.kind === "update-settings")).toHaveLength(1);
+  });
+
+  it("drops optimistic sizing intent after a failed mutation", async () => {
+    const harness = createHarness({ pauseSettings: true });
+    await harness.controller.start();
+    harness.controller.setSizingPercent(175);
+    const first = known(harness.adapter.requests.find((request) => request.kind === "update-settings"), "sizing request");
+    if (first.kind !== "update-settings") throw new Error("settings request expected");
+    harness.adapter.resolveNext?.({ requestId: first.requestId, ok: false, error: { code: "storage-failed", message: "Pixel Pincher could not save this change." } });
+    await settled();
+    await harness.controller.retry();
+    harness.controller.setFitWidth(false);
+    await settled();
+    const updates = harness.adapter.requests.filter((request): request is Extract<PopupRequest, { kind: "update-settings" }> => request.kind === "update-settings");
+    expect(updates.at(-1)).toMatchObject({ patch: { kind: "sizing", sizing: { kind: "scale", percent: 100 } } });
+  });
+
+  it("allows the corrupt-data recovery state to clear the site without confirmation", async () => {
+    const harness = createHarness({ enabled: false });
+    harness.adapter.send = vi.fn(async (request) => {
+      if (request.kind === "get-tab-state") {
+        return { requestId: request.requestId, ok: false, error: { code: "invalid-stored-data", message: "Stored Pixel Pincher data is invalid. Clear this site's data and try again." } };
+      }
+      if (request.kind === "clear-site") return { requestId: request.requestId, ok: true, value: undefined };
+      throw new Error(`Unexpected request: ${request.kind}`);
+    });
+    await harness.controller.start();
+    expect(harness.controller.state).toMatchObject({ kind: "error", recovery: { kind: "access-required" } });
+    await harness.controller.clearSite("clear-corrupt-site");
+    expect(harness.adapter.send).toHaveBeenCalledWith(expect.objectContaining({ kind: "clear-site", url }));
+  });
 });

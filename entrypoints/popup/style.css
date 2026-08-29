@@ -21,4 +21,6 @@ input[type="radio"] { display: inline-block; }
 button { margin-top: 8px; padding: 5px 8px; }
 button:focus-visible, input:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
 .error { color: #b91c1c; font-weight: 600; }
+.diagnostic { color: #b91c1c; font-weight: 600; }
+#popup-status:empty { display: none; }
 output { float: right; }

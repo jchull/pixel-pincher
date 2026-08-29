@@ -1,8 +1,11 @@
 import {
+  MAX_PLACEMENT,
   MAX_SCALE_PERCENT,
+  MIN_PLACEMENT,
   MIN_SCALE_PERCENT,
   type ImportedReference,
   type OverlaySnapshot,
+  type Placement,
   type PopupRequest,
   type PublicError,
   type SettingsPatch,
@@ -56,6 +59,10 @@ function clampScale(value: number): number {
   return Math.min(MAX_SCALE_PERCENT, Math.max(MIN_SCALE_PERCENT, Math.round(value)));
 }
 
+function clampPlacement(value: number): number {
+  return Math.min(MAX_PLACEMENT, Math.max(MIN_PLACEMENT, Math.round(value)));
+}
+
 function parseInteger(value: string): number | undefined {
   if (!/^-?\d+$/.test(value.trim())) return undefined;
   const parsed = Number(value);
@@ -84,6 +91,8 @@ export class PopupController {
   #activeSite: Readonly<{ url: string; origin: string }> | undefined;
   #settingsInFlight = false;
   #pendingSettings: PendingSettings[] = [];
+  #sizingIntent: Sizing | undefined;
+  #placementIntent: Placement | undefined;
 
   constructor(options: Readonly<{ adapter: PopupRuntimeAdapter; view: PopupView; importer: PopupImporter }>) {
     this.#adapter = options.adapter;
@@ -163,18 +172,20 @@ export class PopupController {
   }
 
   setSizingPercent(percent: number, focusId = "scale"): void {
-    const current = this.#enabledTab();
-    if (current === undefined) return;
-    this.updateSettings({ kind: "sizing", sizing: { kind: "scale", percent: clampScale(percent) } }, focusId, true);
+    if (this.#enabledTab() === undefined) return;
+    const sizing: Sizing = { kind: "scale", percent: clampScale(percent) };
+    this.#sizingIntent = sizing;
+    this.updateSettings({ kind: "sizing", sizing }, focusId, true);
   }
 
   setFitWidth(checked: boolean, focusId = "fit-width"): void {
     const tab = this.#enabledTab();
     if (tab === undefined) return;
-    const current = tab.snapshot.settings.sizing;
+    const current = this.#intendedSizing(tab);
     const sizing: Sizing = checked
       ? { kind: "fit-width", lastScalePercent: current.kind === "fit-width" ? current.lastScalePercent : current.percent }
       : { kind: "scale", percent: current.kind === "fit-width" ? current.lastScalePercent : current.percent };
+    this.#sizingIntent = sizing;
     this.updateSettings({ kind: "sizing", sizing }, focusId, true);
   }
 
@@ -184,12 +195,7 @@ export class PopupController {
     const value = parseInteger(raw);
     if (value === undefined) return;
     if (kind === "scale") this.setSizingPercent(value, focusId);
-    else {
-      const tab = this.#enabledTab();
-      if (tab === undefined) return;
-      const placement = { ...tab.snapshot.settings.placement, [kind]: value };
-      this.updateSettings({ kind: "placement", placement }, focusId);
-    }
+    else this.#commitPlacement(kind, clampPlacement(value), focusId);
   }
 
   stepNumber(kind: "x" | "y" | "scale", direction: -1 | 1, shifted: boolean, focusId: string): void {
@@ -197,7 +203,7 @@ export class PopupController {
     const tab = this.#enabledTab();
     if (tab === undefined) return;
     if (kind === "scale") this.setSizingPercent(this.#manualScale(tab) + direction * step, focusId);
-    else this.commitNumber(kind, String(tab.snapshot.settings.placement[kind] + direction * step), focusId);
+    else this.#commitPlacement(kind, this.#intendedPlacement(tab)[kind] + direction * step, focusId);
   }
 
   toggleClearConfirmation(): void {
@@ -217,19 +223,49 @@ export class PopupController {
     if (response) await this.#load();
   }
 
+  #commitPlacement(kind: "x" | "y", value: number, focusId: string): void {
+    const tab = this.#enabledTab();
+    if (tab === undefined) return;
+    const placement: Placement = { ...this.#intendedPlacement(tab), [kind]: value };
+    this.#placementIntent = placement;
+    this.updateSettings({ kind: "placement", placement }, focusId);
+  }
+
+  #intendedSizing(tab: TabState): Sizing {
+    return this.#sizingIntent ?? tab.snapshot.settings.sizing;
+  }
+
+  #intendedPlacement(tab: TabState): Placement {
+    return this.#placementIntent ?? tab.snapshot.settings.placement;
+  }
+
   #manualScale(tab: TabState): number {
-    return tab.snapshot.settings.sizing.kind === "fit-width"
-      ? tab.snapshot.settings.sizing.lastScalePercent
-      : tab.snapshot.settings.sizing.percent;
+    const sizing = this.#intendedSizing(tab);
+    return sizing.kind === "fit-width" ? sizing.lastScalePercent : sizing.percent;
+  }
+
+  /** Intents only bridge the round-trip: a confirmed snapshot is the source of truth again. */
+  #dropIntents(): void {
+    this.#sizingIntent = undefined;
+    this.#placementIntent = undefined;
   }
 
   async #dispatchSettings(pending: PendingSettings): Promise<void> {
     const tab = this.#enabledTab();
-    if (tab === undefined) return;
+    if (tab === undefined) {
+      this.#pendingSettings = [];
+      return;
+    }
     this.#settingsInFlight = true;
     const response = await this.#sendSnapshot({ kind: "update-settings", url: tab.url, patch: pending.patch }, pending.focusId);
     this.#settingsInFlight = false;
-    if (response !== undefined) this.#applySnapshot(response, pending.focusId);
+    if (response === undefined) {
+      // A failed mutation stops the queue and drops queued mutations; the error
+      // stays visible until the user takes a new action.
+      this.#pendingSettings = [];
+      return;
+    }
+    this.#applySnapshot(response, pending.focusId);
     const next = this.#pendingSettings.shift();
     if (next !== undefined) void this.#dispatchSettings(next);
   }
@@ -272,9 +308,13 @@ export class PopupController {
     } catch { this.#invalid(focusId); return false; }
   }
 
-  #applyTab(tab: TabState): void { this.#setState(recoveryFor(tab)); }
+  #applyTab(tab: TabState): void {
+    this.#dropIntents();
+    this.#setState(recoveryFor(tab));
+  }
 
   #applySnapshot(snapshot: OverlaySnapshot, focusId: string): void {
+    this.#dropIntents();
     const prior = this.#enabledTab();
     const current = this.#recover();
     if (prior !== undefined) this.#applyTab({ ...prior, enabled: true, snapshot, diagnostic: null });
@@ -303,6 +343,7 @@ export class PopupController {
   }
 
   #fail(error: PublicError, recovery: PopupState, focusId?: string): undefined {
+    this.#dropIntents();
     if (recovery.kind === "loading" || recovery.kind === "unsupported" || recovery.kind === "error") {
       const site = this.#activeSite;
       this.#setState({ kind: "error", error, recovery: { kind: "access-required", url: site?.url ?? "", origin: site?.origin ?? "" } });
