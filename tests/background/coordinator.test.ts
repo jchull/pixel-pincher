@@ -242,6 +242,32 @@ describe("BackgroundCoordinator", () => {
     await expect(harness.coordinator.handlePopup({ kind: "get-tab-state", requestId: "mismatch" })).resolves.toMatchObject({ value: { diagnostic: null } });
   });
 
+  it("routes complete correlated panel requests from the sender tab without active-tab assumptions", async () => {
+    const imported = reference();
+    const harness = createCoordinator({ currentSnapshot: snapshot({ reference: imported }) });
+    harness.tabs.active = { id: 10, url: otherPageUrl };
+    await expect(harness.coordinator.handlePanelRequest(
+      { kind: "get-panel-state", requestId: "state" },
+      { tabId: 9, frameId: 0, url: pageUrl },
+    )).resolves.toMatchObject({ requestId: "state", ok: true, value: { pageKey: derivePageKey(new URL(pageUrl)) } });
+    await expect(harness.coordinator.handlePanelRequest(
+      { kind: "update-settings", requestId: "settings", patch: { kind: "inversion", inverted: true } },
+      { tabId: 9, frameId: 0, url: pageUrl },
+    )).resolves.toMatchObject({ requestId: "settings", ok: true, value: { settings: { inverted: true } } });
+    await expect(harness.coordinator.handlePanelRequest(
+      { kind: "replace-reference", requestId: "replace", reference: imported },
+      { tabId: 9, frameId: 0, url: pageUrl },
+    )).resolves.toMatchObject({ requestId: "replace", ok: true });
+    await expect(harness.coordinator.handlePanelRequest(
+      { kind: "clear-site", requestId: "clear" },
+      { tabId: 9, frameId: 0, url: pageUrl },
+    )).resolves.toEqual({ requestId: "clear", ok: true, value: undefined });
+    expect(harness.repository.updateSettings).toHaveBeenCalledWith(expect.objectContaining({ url: new URL(pageUrl) }));
+    expect(harness.repository.replaceReference).toHaveBeenCalledWith(expect.objectContaining({ url: new URL(pageUrl), reference: imported }));
+    expect(harness.repository.clearOrigin).toHaveBeenCalledOnce();
+    expect(harness.siteAccess.unregisterOrigin).toHaveBeenCalledOnce();
+  });
+
   it("accepts correlated panel-position requests only from the current top-frame sender", async () => {
     const harness = createCoordinator();
     const response = await harness.coordinator.handlePanelRequest(

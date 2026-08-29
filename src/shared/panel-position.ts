@@ -3,6 +3,7 @@ import {
   MIN_PANEL_POSITION,
   publicError,
   type ContentPanelRequest,
+  type ContentPanelResponse,
   type ContentRequest,
   type Hydration,
   type OriginRecordV1,
@@ -14,8 +15,11 @@ import {
 import {
   parseContentRequest,
   parseHydration,
+  parseImportedReference,
   parseOriginRecordV1,
   parseOverlaySnapshot,
+  parsePublicError,
+  parseSettingsPatch,
 } from "./parse";
 
 type UnknownRecord = Record<string, unknown>;
@@ -157,24 +161,59 @@ export function parseContentRequestWithPanelPosition(
 }
 
 export function parseContentPanelRequest(value: unknown): Result<ContentPanelRequest, PublicError> {
-  if (!isOwnDataRecord(value) || !hasExactKeys(value, ["kind", "requestId", "panelPosition"])) {
+  if (!isOwnDataRecord(value) || typeof value.kind !== "string" ||
+    typeof value.requestId !== "string" || value.requestId.length === 0) {
     return failure("invalid-request");
   }
-  const panelPosition = parsePanelPosition(value.panelPosition);
-  if (
-    value.kind !== "update-panel-position" ||
-    typeof value.requestId !== "string" ||
-    value.requestId.length === 0 ||
-    !panelPosition.ok
-  ) {
+  switch (value.kind) {
+    case "get-panel-state":
+    case "clear-site":
+      return hasExactKeys(value, ["kind", "requestId"])
+        ? { ok: true, value: { kind: value.kind, requestId: value.requestId } }
+        : failure("invalid-request");
+    case "replace-reference": {
+      const reference = parseImportedReference(value.reference);
+      return hasExactKeys(value, ["kind", "requestId", "reference"]) && reference.ok
+        ? { ok: true, value: { kind: "replace-reference", requestId: value.requestId, reference: reference.value } }
+        : failure("invalid-request");
+    }
+    case "update-settings": {
+      const patch = parseSettingsPatch(value.patch);
+      return hasExactKeys(value, ["kind", "requestId", "patch"]) && patch.ok
+        ? { ok: true, value: { kind: "update-settings", requestId: value.requestId, patch: patch.value } }
+        : failure("invalid-request");
+    }
+    case "update-panel-position": {
+      const panelPosition = parsePanelPosition(value.panelPosition);
+      return hasExactKeys(value, ["kind", "requestId", "panelPosition"]) && panelPosition.ok
+        ? { ok: true, value: { kind: "update-panel-position", requestId: value.requestId, panelPosition: panelPosition.value } }
+        : failure("invalid-request");
+    }
+    default:
+      return failure("invalid-request");
+  }
+}
+
+/** Parses correlated in-page panel responses, including panel-position snapshots. */
+export function parseContentPanelResponse(
+  value: unknown,
+): Result<ContentPanelResponse<OverlaySnapshot | undefined>, PublicError> {
+  if (!isOwnDataRecord(value) || typeof value.requestId !== "string" ||
+    value.requestId.length === 0 || typeof value.ok !== "boolean") {
     return failure("invalid-request");
   }
-  return {
-    ok: true,
-    value: {
-      kind: "update-panel-position",
-      requestId: value.requestId,
-      panelPosition: panelPosition.value,
-    },
-  };
+  if (!value.ok) {
+    const error = parsePublicError(value.error);
+    return hasExactKeys(value, ["requestId", "ok", "error"]) && error.ok
+      ? { ok: true, value: { requestId: value.requestId, ok: false, error: error.value } }
+      : failure("invalid-request");
+  }
+  if (!hasExactKeys(value, ["requestId", "ok", "value"])) return failure("invalid-request");
+  if (value.value === undefined) {
+    return { ok: true, value: { requestId: value.requestId, ok: true, value: undefined } };
+  }
+  const snapshot = parseOverlaySnapshotWithPanelPosition(value.value);
+  return snapshot.ok
+    ? { ok: true, value: { requestId: value.requestId, ok: true, value: snapshot.value } }
+    : failure("invalid-request");
 }

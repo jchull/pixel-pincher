@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { MAX_PANEL_POSITION, MIN_PANEL_POSITION } from "../../src/shared/contracts";
 import {
   parseContentPanelRequest,
+  parseContentPanelResponse,
   parseContentRequestWithPanelPosition,
   parseOriginRecordWithPanelPosition,
   parseOverlaySnapshotWithPanelPosition,
@@ -64,11 +65,34 @@ describe("panel position boundaries", () => {
       requestId: "panel-1",
       panelPosition: { x: 7, y: 9 },
     })).toMatchObject({ ok: true, value: { requestId: "panel-1" } });
+    const dataUrl = "data:image/png;base64,AQID";
+    const reference = {
+      metadata: {
+        id: "123e4567-e89b-42d3-a456-426614174000",
+        name: "reference.png",
+        mimeType: "image/png",
+        width: 2,
+        height: 2,
+        encodedBytes: dataUrl.length,
+        importedAt: 1,
+      },
+      dataUrl,
+    };
+    expect(parseContentPanelRequest({ kind: "get-panel-state", requestId: "get" })).toMatchObject({ ok: true });
+    expect(parseContentPanelRequest({ kind: "replace-reference", requestId: "replace", reference })).toMatchObject({ ok: true });
+    expect(parseContentPanelRequest({ kind: "update-settings", requestId: "setting", patch: { kind: "opacity", opacity: 0.5 } })).toMatchObject({ ok: true });
+    expect(parseContentPanelRequest({ kind: "clear-site", requestId: "clear" })).toMatchObject({ ok: true });
     expect(parseContentPanelRequest({
       kind: "update-panel-position",
       requestId: "",
       panelPosition: { x: 7, y: 9 },
     }).ok).toBe(false);
+    expect(parseContentPanelRequest({ kind: "update-settings", requestId: "bad", patch: { kind: "opacity", opacity: 2 } }).ok).toBe(false);
+    expect(parseContentPanelResponse({
+      requestId: "response",
+      ok: true,
+      value: { ...snapshot, panelPosition: { x: 7, y: 9 } },
+    })).toMatchObject({ ok: true, value: { requestId: "response", ok: true } });
     expect(parseContentRequestWithPanelPosition({
       kind: "apply-settings",
       snapshot: { ...snapshot, panelPosition: { x: 7, y: 9 } },

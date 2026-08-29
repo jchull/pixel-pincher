@@ -1,8 +1,8 @@
 import { defineContentScript } from "wxt/utils/define-content-script";
 
-import { ControlPanel } from "../src/content/control-panel";
+import { ControlPanel, createContentImporter } from "../src/content/control-panel";
 import { OverlayController } from "../src/content/overlay-controller";
-import type { ContentEvent, PanelPosition } from "../src/shared/contracts";
+import type { ContentEvent } from "../src/shared/contracts";
 import { parseContentRequestWithPanelPosition } from "../src/shared/panel-position";
 
 const controllerKey = Symbol.for("pixel-pincher.overlay-controller");
@@ -22,19 +22,11 @@ export function startOverlayContent(
   const send = (event: ContentEvent): void => {
     void chrome.runtime.sendMessage(event).catch(() => undefined);
   };
-  let panelRequestId = 0;
-  const commitPanelPosition = (panelPosition: PanelPosition): void => {
-    panelRequestId += 1;
-    void chrome.runtime.sendMessage({
-      kind: "update-panel-position",
-      requestId: `panel-${panelRequestId}`,
-      panelPosition,
-    }).catch(() => undefined);
-  };
   const panel = new ControlPanel({
     window: contentWindow,
     document: contentWindow.document,
-    onPositionCommitted: commitPanelPosition,
+    importReference: createContentImporter(),
+    request(request) { return chrome.runtime.sendMessage(request); },
   });
   const controller = new OverlayController({
     window: contentWindow,

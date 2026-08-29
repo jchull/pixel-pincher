@@ -11,7 +11,7 @@ function recovery(state: PopupState): Exclude<PopupState, { kind: "error" }> {
   return state.kind === "error" ? state.recovery : state;
 }
 
-function controls(tab: TabState, confirmingClear: boolean): string {
+export function controls(tab: TabState, confirmingClear: boolean): string {
   const reference = tab.snapshot.reference;
   const settings = tab.snapshot.settings;
   const disabled = reference === null ? " disabled" : "";
@@ -66,7 +66,9 @@ function markup(state: PopupState): string {
     const corruptDataClear = state.kind === "error" && state.error.code === "invalid-stored-data";
     return `<h1>Pixel Pincher</h1>${status}<p>Enable Pixel Pincher on this site to import and restore a reference.</p><button id="enable-site" type="button">Enable on this site</button>${corruptDataClear ? '<button id="clear-corrupt-site" type="button">Clear site data</button>' : ""}${state.kind === "error" ? '<button id="retry" type="button">Retry</button>' : ""}`;
   }
-  return `<h1>Pixel Pincher</h1>${status}${controls(current.tab, current.confirmingClear)}${state.kind === "error" ? '<button id="retry" type="button">Retry</button>' : ""}`;
+  // The in-page panel owns every enabled-site control. The popup remains only
+  // for the user-gesture permission bootstrap until its legacy UI is removed.
+  return `<h1>Pixel Pincher</h1>${status}<p>Pixel Pincher is enabled for this site. Use the in-page control panel to manage the reference and overlay.</p>${state.kind === "error" ? '<button id="retry" type="button">Retry</button>' : ""}`;
 }
 
 function input(root: HTMLElement, id: string): HTMLInputElement | undefined {

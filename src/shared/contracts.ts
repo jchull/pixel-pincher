@@ -118,12 +118,24 @@ export type UpdatePanelPositionInput = Readonly<{
   panelPosition: PanelPosition;
 }>;
 
-/** A top-frame content panel request. Its URL is deliberately bound to the runtime sender. */
-export type ContentPanelRequest = Readonly<{
-  kind: "update-panel-position";
-  requestId: string;
-  panelPosition: PanelPosition;
-}>;
+/**
+ * A top-frame in-page panel request. Its URL is deliberately omitted: the
+ * coordinator derives it from the authenticated runtime sender instead.
+ */
+export type ContentPanelRequest =
+  | Readonly<{ kind: "get-panel-state"; requestId: string }>
+  | Readonly<{
+      kind: "replace-reference";
+      requestId: string;
+      reference: ImportedReference;
+    }>
+  | Readonly<{ kind: "update-settings"; requestId: string; patch: SettingsPatch }>
+  | Readonly<{ kind: "clear-site"; requestId: string }>
+  | Readonly<{
+      kind: "update-panel-position";
+      requestId: string;
+      panelPosition: PanelPosition;
+    }>;
 
 export type PopupRequest =
   | Readonly<{ kind: "get-tab-state"; requestId: string }>

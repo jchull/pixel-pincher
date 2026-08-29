@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ControlPanel } from "../../src/content/control-panel";
 import type { OverlaySnapshot } from "../../src/shared/contracts";
 import { parseOverlaySnapshotWithPanelPosition } from "../../src/shared/panel-position";
+import { parseImportedReference } from "../../src/shared/parse";
 
 const metadata = {
   id: "123e4567-e89b-42d3-a456-426614174000",
@@ -123,6 +124,57 @@ describe("ControlPanel", () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(commits).toHaveBeenCalledTimes(2);
     expect(document.querySelector<HTMLElement>("#pixel-pincher-control-panel")?.style.left).toBe("80px");
+  });
+
+  it("sends correlated panel mutations for the complete enabled-site surface and coalesces opacity", async () => {
+    const send = vi.fn(async (request: { requestId: string }) => ({
+      requestId: request.requestId,
+      ok: true,
+      value: snapshot(2),
+    }));
+    const dataUrl = "data:image/png;base64,AQID";
+    const imported = parse(parseImportedReference({
+      metadata: { ...metadata, encodedBytes: dataUrl.length },
+      dataUrl,
+    }));
+    const importer = vi.fn(async () => ({ ok: true as const, value: imported }));
+    panel.destroy();
+    panel = new ControlPanel({ window, document, request: send, importReference: importer });
+    panel.apply(snapshot(1));
+    const byId = <T extends HTMLElement>(id: string): T => {
+      const found = [...elements].reverse().find((element) => element.id === id);
+      if (found === undefined) throw new Error(`Expected ${id}.`);
+      return found as T;
+    };
+    const file = byId<HTMLInputElement>("reference-file");
+    Object.defineProperty(file, "files", { configurable: true, value: [new File(["x"], "reference.png", { type: "image/png" })] });
+    file.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(importer).toHaveBeenCalledOnce());
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ kind: "replace-reference", reference: imported }));
+    const opacity = byId<HTMLInputElement>("opacity");
+    opacity.value = "30";
+    opacity.dispatchEvent(new Event("input"));
+    opacity.value = "40";
+    opacity.dispatchEvent(new Event("input"));
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(3));
+    expect(send).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      kind: "update-settings", patch: { kind: "opacity", opacity: 0.3 },
+    }));
+    expect(send).toHaveBeenLastCalledWith(expect.objectContaining({
+      kind: "update-settings", patch: { kind: "opacity", opacity: 0.4 },
+    }));
+    byId<HTMLInputElement>("visible").click();
+    byId<HTMLInputElement>("fit-width").click();
+    byId<HTMLInputElement>("inverted").click();
+    byId<HTMLInputElement>("interaction-drag").click();
+    const x = byId<HTMLInputElement>("x");
+    x.value = "12";
+    x.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    const clear = byId<HTMLButtonElement>("clear-site");
+    clear.click();
+    expect(clear.textContent).toContain("Confirm");
+    clear.click();
+    await vi.waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({ kind: "clear-site" })));
   });
 
   it("clamps persisted and keyboard positions to keep its handle reachable", () => {
