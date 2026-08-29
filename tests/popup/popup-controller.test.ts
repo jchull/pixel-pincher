@@ -146,6 +146,13 @@ describe("popup controller", () => {
     expect(harness.view.focus).toHaveBeenCalledWith("reference-file");
   });
 
+  it("shows a decode error when the browser image decoder throws", async () => {
+    const harness = createHarness({ importer: vi.fn().mockRejectedValue(new Error("CSP blocked image decoding")) });
+    await harness.controller.start();
+    await harness.controller.importFile(new File(["x"], "reference.png", { type: "image/png" }));
+    expect(harness.controller.state).toMatchObject({ kind: "error", error: { code: "image-decode-failed" } });
+  });
+
   it("rejects stale correlated responses and preserves the error until a user action", async () => {
     const harness = createHarness();
     harness.adapter.send = async (request) => ({ requestId: `${request.requestId}-stale`, ok: true, value: tab() });

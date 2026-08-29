@@ -140,7 +140,13 @@ export class PopupController {
       return;
     }
     if (!isEnabled(recovery)) return;
-    const imported = await this.#importer(file);
+    let imported: Awaited<ReturnType<PopupImporter>>;
+    try {
+      imported = await this.#importer(file);
+    } catch {
+      this.#fail({ code: "image-decode-failed", message: "Pixel Pincher could not decode that image." }, recovery);
+      return;
+    }
     if (!imported.ok) {
       this.#fail(imported.error, recovery);
       return;

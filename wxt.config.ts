@@ -20,6 +20,9 @@ export default defineConfig({
       },
     },
     incognito: 'not_allowed',
+    content_security_policy: {
+      extension_pages: "script-src 'self'; object-src 'self'; img-src 'self' blob: data:",
+    },
     optional_host_permissions: ['http://*/*', 'https://*/*'],
     commands: {
       "toggle-visibility": {
