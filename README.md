@@ -68,7 +68,7 @@ page).
 - Pixel Pincher stores references, settings, and placement per origin in
   `chrome.storage.local`. It requests `unlimitedStorage` so several site
   references can be retained locally.
-- An encoded reference data URL is limited to 8 MiB. Decoded images are
+- Source images are limited to 10 MiB; their encoded reference data URLs are limited to 14 MiB. Decoded images are
   limited to 40 million pixels. Invalid, unsupported, oversized, or
   undecodable images are rejected without replacing an existing reference.
 - The extension makes no network requests and does not collect or transmit

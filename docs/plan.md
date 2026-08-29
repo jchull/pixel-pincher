@@ -67,7 +67,7 @@ Scale sizing renders the image proportionally from 10% through 400%. A scale of 
 
 The image payload is a data URL stored under its own key. Origin metadata and controls never contain the payload. Updating transparency, sizing, inversion, or placement must not read, rewrite, or resend the image.
 
-The extension requests the `unlimitedStorage` permission because users can save references for several origins. Pixel Pincher still limits each encoded data URL to 8 MiB and each decoded image to 40 million pixels. The import parser checks both limits before replacing the existing reference.
+The extension requests the `unlimitedStorage` permission because users can save references for several origins. Pixel Pincher accepts source images up to 10 MiB, limits the encoded data URL to 14 MiB, and limits each decoded image to 40 million pixels. The import parser checks both limits before replacing the existing reference.
 
 A hydrate message includes the image only when a content script starts or the reference changes. Routine control changes send settings and reference identity without image bytes.
 
@@ -300,7 +300,7 @@ Do not expose raw Chrome error strings in popup text. Log the raw cause in devel
 
 1. The popup checks file size and accepted MIME type.
 2. It decodes the image and checks dimensions and pixel count.
-3. It creates a data URL and checks the encoded 8 MiB limit.
+3. It accepts source files up to 10 MiB, creates a data URL, and checks the encoded 14 MiB limit.
 4. It sends `replace-reference` only after site access is granted.
 5. The repository commits the replacement in the documented order.
 6. The background sends one hydration message to the active tab.

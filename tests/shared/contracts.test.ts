@@ -6,6 +6,7 @@ import {
   DEFAULT_SETTINGS,
   MAX_IMAGE_ENCODED_BYTES,
   MAX_IMAGE_PIXELS,
+  MAX_IMAGE_RAW_BYTES,
   PUBLIC_ERROR_MESSAGES,
   publicError,
   toPublicError,
@@ -37,7 +38,8 @@ describe("shared contracts", () => {
     expect(Object.isFrozen(DEFAULT_SETTINGS)).toBe(true);
     expect(Object.isFrozen(DEFAULT_SETTINGS.placement)).toBe(true);
     expect(Object.isFrozen(DEFAULT_ORIGIN_SETTINGS.sizing)).toBe(true);
-    expect(MAX_IMAGE_ENCODED_BYTES).toBe(8 * 1024 * 1024);
+    expect(MAX_IMAGE_RAW_BYTES).toBe(10 * 1024 * 1024);
+    expect(MAX_IMAGE_ENCODED_BYTES).toBe(14 * 1024 * 1024);
     expect(MAX_IMAGE_PIXELS).toBe(40_000_000);
   });
 

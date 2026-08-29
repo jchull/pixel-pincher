@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { BackgroundCoordinator, type ActiveTab, type TabResolver } from "../../src/background/coordinator";
 import { TabMessenger } from "../../src/background/tab-messenger";
-import { type Hydration, type ImportError, type ImportedReference, type MimeType, type OverlaySnapshot, type PopupRequest, type Result } from "../../src/shared/contracts";
+import { MAX_IMAGE_RAW_BYTES, type Hydration, type ImportError, type ImportedReference, type MimeType, type OverlaySnapshot, type PopupRequest, type Result } from "../../src/shared/contracts";
 import { deriveOrigin, derivePageKey } from "../../src/shared/keys";
 import { parseImportedReference, parsePopupRequest } from "../../src/shared/parse";
 import { createImportReference, type ImportDependencies, type ImportFileLike, type ImportedDimensions } from "../../src/popup/import-reference";
@@ -12,7 +12,6 @@ import { createImportReference, type ImportDependencies, type ImportFileLike, ty
 const pageUrl = "https://example.test/import";
 const IMPORTED_ID = "123e4567-e89b-42d3-a456-426614174000";
 const IMPORTED_AT = 1_700_000_000_000;
-const MAX_ENCODED = 8 * 1024 * 1024;
 
 function fixtureBytes(name: string): Uint8Array {
   return new Uint8Array(readFileSync(resolve(process.cwd(), "tests/fixtures/import", name)));
@@ -241,31 +240,18 @@ describe("import-reference", () => {
     await expect(boundary.importer(fixtureFile("image.png", "image/png"))).resolves.toMatchObject({ ok: true });
   });
 
-  it("rejects over-limit files before reading, accounting for base64 and data URL expansion", async () => {
-    const rawOversized = createHarness();
-    const rawResult = await rawOversized.importer({ name: "big.png", type: "image/png", size: MAX_ENCODED + 1 });
-    expectImportError(rawResult, "image-too-large");
-    expect(rawOversized.readFile).not.toHaveBeenCalled();
-    expect(rawOversized.decodeImage).not.toHaveBeenCalled();
-
-    // 6 MiB of raw bytes fits the raw limit but expands past 8 MiB as a base64 data URL.
-    const expanding = createHarness();
-    const expandResult = await expanding.importer({ name: "big.png", type: "image/png", size: 6 * 1024 * 1024 });
-    expectImportError(expandResult, "image-too-large");
-    expect(expanding.readFile).not.toHaveBeenCalled();
-
-    // Boundary: the largest size whose worst-case encoded form still fits the limit.
-    const boundarySize = 6_291_435;
+  it("accepts 10 MiB source images and rejects larger files before reading", async () => {
     const boundary = createHarness({ dimensions: { width: 1, height: 1 } });
-    boundary.readFile.mockResolvedValueOnce(pngLikeBytes(boundarySize));
-    const boundaryResult = await boundary.importer({ name: "big.png", type: "image/png", size: boundarySize });
+    boundary.readFile.mockResolvedValueOnce(pngLikeBytes(MAX_IMAGE_RAW_BYTES));
+    const boundaryResult = await boundary.importer({ name: "big.png", type: "image/png", size: MAX_IMAGE_RAW_BYTES });
     expect(boundaryResult.ok).toBe(true);
     expect(boundary.readFile).toHaveBeenCalledOnce();
 
-    const overBoundary = createHarness();
-    const overResult = await overBoundary.importer({ name: "big.png", type: "image/png", size: boundarySize + 1 });
-    expectImportError(overResult, "image-too-large");
-    expect(overBoundary.readFile).not.toHaveBeenCalled();
+    const oversized = createHarness();
+    const oversizedResult = await oversized.importer({ name: "big.png", type: "image/png", size: MAX_IMAGE_RAW_BYTES + 1 });
+    expectImportError(oversizedResult, "image-too-large");
+    expect(oversized.readFile).not.toHaveBeenCalled();
+    expect(oversized.decodeImage).not.toHaveBeenCalled();
   });
 
   describe("Task 4 handoff", () => {
@@ -395,7 +381,7 @@ describe("import-reference", () => {
         { file: fixtureFile("image.png", "image/png"), code: "image-decode-failed", failRead: true },
         { file: fixtureFile("image.png", "image/png"), code: "image-decode-failed", dimensions: { width: 0, height: 1 } },
         { file: fixtureFile("image.png", "image/png"), code: "image-too-many-pixels", dimensions: { width: 7_000, height: 6_000 } },
-        { file: { name: "big.png", type: "image/png", size: MAX_ENCODED + 1 }, code: "image-too-large" },
+        { file: { name: "big.png", type: "image/png", size: MAX_IMAGE_RAW_BYTES + 1 }, code: "image-too-large" },
       ];
 
       for (const testCase of rejected) {

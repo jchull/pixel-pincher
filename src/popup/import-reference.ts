@@ -8,6 +8,7 @@ import {
   type Result,
   MAX_IMAGE_ENCODED_BYTES,
   MAX_IMAGE_PIXELS,
+  MAX_IMAGE_RAW_BYTES,
 } from "../shared/contracts";
 
 /** The minimal File-shaped fields the import path needs from a picked file. */
@@ -227,7 +228,7 @@ export function createImportReference(deps: ImportDependencies) {
 
     // base64 expands every 3 input bytes to 4 characters; reject files whose
     // encoded form cannot fit the limit before any bytes are allocated.
-    if (DATA_URL_PREFIX_BYTES + Math.ceil(file.size / 3) * 4 > MAX_IMAGE_ENCODED_BYTES) {
+    if (file.size > MAX_IMAGE_RAW_BYTES || DATA_URL_PREFIX_BYTES + Math.ceil(file.size / 3) * 4 > MAX_IMAGE_ENCODED_BYTES) {
       return { ok: false, error: tooLargeError() };
     }
 
@@ -238,7 +239,7 @@ export function createImportReference(deps: ImportDependencies) {
     const detected = sniffImageMimeType(bytes);
     if (detected === null) return { ok: false, error: typeError() };
     if (file.type.trim().toLowerCase() !== detected) return { ok: false, error: typeError() };
-    if (bytes.byteLength > MAX_IMAGE_ENCODED_BYTES) return { ok: false, error: tooLargeError() };
+    if (bytes.byteLength > MAX_IMAGE_RAW_BYTES) return { ok: false, error: tooLargeError() };
 
     const dimensions = await decodeImageSafely(deps.decodeImage, bytes, detected);
     if (!isValidDimensions(dimensions)) return { ok: false, error: decodeError() };

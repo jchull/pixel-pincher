@@ -181,7 +181,7 @@ export const PUBLIC_ERROR_MESSAGES = {
   "site-access-revoked": "Site access was removed.",
   "content-unavailable": "The page overlay is unavailable. Reload the page and try again.",
   "invalid-image-type": "Choose a PNG, JPEG, WebP, or SVG image.",
-  "image-too-large": "The image is too large. Choose an image up to 8 MiB.",
+  "image-too-large": "The image is too large. Choose an image up to 10 MiB.",
   "image-too-many-pixels": "The image has too many pixels. Choose an image with at most 40 million pixels.",
   "image-decode-failed": "Pixel Pincher could not decode that image.",
   "invalid-request": "Pixel Pincher received an invalid request.",
@@ -259,7 +259,10 @@ export function toPublicError(error: AppError): PublicError {
   }
 }
 
-export const MAX_IMAGE_ENCODED_BYTES = 8 * 1024 * 1024;
+/** Maximum selected source file size; base64 storage needs additional space. */
+export const MAX_IMAGE_RAW_BYTES = 10 * 1024 * 1024;
+/** Maximum data-URL record size, sufficient for a 10 MiB source file plus its MIME prefix. */
+export const MAX_IMAGE_ENCODED_BYTES = 14 * 1024 * 1024;
 export const MAX_IMAGE_PIXELS = 40_000_000;
 export const MIN_SCALE_PERCENT = 10;
 export const MAX_SCALE_PERCENT = 400;

@@ -105,7 +105,7 @@ describe("boundary parsers", () => {
     expect(parseImportedReference({ ...importedReference, metadata: { ...metadata, encodedBytes: 2 } }).ok).toBe(false);
     expect(parseImageRecordV1({ schemaVersion: 1, referenceId: id, dataUrl }).ok).toBe(true);
     expect(parseImageRecordV1({ schemaVersion: 1, referenceId: id, dataUrl: "data:text/plain;base64,AQID" }).ok).toBe(false);
-    const oversizedDataUrl = `data:image/png;base64,${"AAAA".repeat(2 * 1024 * 1024)}`;
+    const oversizedDataUrl = `data:image/png;base64,${"AAAA".repeat(4 * 1024 * 1024)}`;
     expect(parseImageRecordV1({ schemaVersion: 1, referenceId: id, dataUrl: oversizedDataUrl }).ok).toBe(false);
   });
 
@@ -279,7 +279,7 @@ describe("boundary parsers", () => {
       "site-access-revoked": "Site access was removed.",
       "content-unavailable": "The page overlay is unavailable. Reload the page and try again.",
       "invalid-image-type": "Choose a PNG, JPEG, WebP, or SVG image.",
-      "image-too-large": "The image is too large. Choose an image up to 8 MiB.",
+      "image-too-large": "The image is too large. Choose an image up to 10 MiB.",
       "image-too-many-pixels": "The image has too many pixels. Choose an image with at most 40 million pixels.",
       "image-decode-failed": "Pixel Pincher could not decode that image.",
       "invalid-request": "Pixel Pincher received an invalid request.",
