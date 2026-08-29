@@ -11,7 +11,7 @@ import {
   type TabState,
   toPublicError,
 } from "../shared/contracts";
-import { deriveOrigin } from "../shared/keys";
+import { deriveOrigin, derivePageKey } from "../shared/keys";
 import { parseSupportedUrl } from "../shared/parse";
 import type { OverlayRepository } from "./repository";
 import type { SiteAccessService } from "./site-access";
@@ -29,7 +29,6 @@ export interface TabResolver {
   getTab(tabId: number): Promise<ActiveTab | null>;
 }
 
-
 function failure<T>(requestId: string, error: AppError): PopupResponse<T> {
   return { requestId, ok: false, error: toPublicError(error) };
 }
@@ -40,6 +39,16 @@ function success<T>(requestId: string, value: T): PopupResponse<T> {
 
 function deliveryFailure(result: Result<void, DeliveryError>): AppError {
   return result.ok ? new AppError("content-unavailable") : result.error;
+}
+
+function sameCanonicalPage(left: string, right: string): boolean {
+  const leftUrl = parseSupportedUrl(left);
+  const rightUrl = parseSupportedUrl(right);
+  return leftUrl.ok && rightUrl.ok && derivePageKey(leftUrl.value) === derivePageKey(rightUrl.value);
+}
+
+function nextRevision(revision: number): number | undefined {
+  return revision < Number.MAX_SAFE_INTEGER ? revision + 1 : undefined;
 }
 
 /** Serializes tab actions and keeps diagnostic/delivery state intentionally in service-worker memory. */
@@ -74,26 +83,45 @@ export class BackgroundCoordinator {
     if (sender.frameId !== 0 || sender.url !== event.url) return;
     const parsed = parseSupportedUrl(event.url);
     if (!parsed.ok) return;
-    const active = await this.#tabs.getTab(sender.tabId);
-    if (active === null || active.url !== event.url) return;
+    const origin = deriveOrigin(parsed.value);
+    if (origin === undefined) return;
+    const current = await this.#tabs.getTab(sender.tabId);
+    if (current === null || !sameCanonicalPage(current.url, event.url)) return;
 
     await this.#runTab(sender.tabId, async () => {
+      if (!await this.#sameTabPage(sender.tabId, event.url)) return;
+
       switch (event.kind) {
         case "content-ready": {
           const hydration = await this.#repository.readHydration(parsed.value);
-          if (!hydration.ok) return;
+          if (!hydration.ok || !await this.#sameTabPage(sender.tabId, event.url)) return;
+          const enabled = await this.#siteAccess.has(origin);
+          if (!enabled.ok || !enabled.value) return;
+          this.#discardStaleDiagnostic(sender.tabId, hydration.value.snapshot);
           await this.#deliverHydration(sender.tabId, hydration.value);
           return;
         }
         case "placement-committed": {
+          const enabled = await this.#siteAccess.has(origin);
+          if (!enabled.ok || !enabled.value || !await this.#sameTabPage(sender.tabId, event.url)) return;
           const updated = await this.#repository.updatePlacement({ url: parsed.value, placement: event.placement });
-          if (!updated.ok) return;
+          if (!updated.ok || !await this.#sameTabPage(sender.tabId, event.url)) return;
+          this.#discardStaleDiagnostic(sender.tabId, updated.value);
           await this.#deliverSettings(sender.tabId, updated.value);
           return;
         }
-        case "image-load-failed":
-          this.#diagnostics.set(sender.tabId, { referenceId: event.referenceId, error: toPublicError(new AppError("image-render-failed")) });
+        case "image-load-failed": {
+          const snapshot = await this.#repository.readSnapshot(parsed.value);
+          if (!snapshot.ok || !await this.#sameTabPage(sender.tabId, event.url)) return;
+          const enabled = await this.#siteAccess.has(origin);
+          if (!enabled.ok || !enabled.value) return;
+          if (snapshot.value.reference?.id === event.referenceId) {
+            this.#diagnostics.set(sender.tabId, { referenceId: event.referenceId, error: toPublicError(new AppError("image-render-failed")) });
+          } else {
+            this.#discardStaleDiagnostic(sender.tabId, snapshot.value);
+          }
           return;
+        }
       }
     });
   }
@@ -110,60 +138,92 @@ export class BackgroundCoordinator {
       if (!enabled.ok) return failure(request.requestId, enabled.error);
       const snapshot = await this.#repository.readSnapshot(url.value);
       if (!snapshot.ok) return failure(request.requestId, snapshot.error);
-      const diagnostic = this.#diagnostics.get(active.id);
+      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
+      const diagnostic = this.#diagnosticFor(active.id, snapshot.value);
       const state: TabState = {
         tabId: active.id,
         url: active.url,
         origin: activeOrigin,
         enabled: enabled.value,
         snapshot: snapshot.value,
-        diagnostic: diagnostic ?? null,
+        diagnostic,
       };
       return success(request.requestId, state);
     }
 
     const requested = parseSupportedUrl(request.url);
-    if (!requested.ok || requested.value.toString() !== active.url) return failure(request.requestId, new AppError("invalid-request"));
+    if (!requested.ok || !sameCanonicalPage(requested.value.toString(), active.url)) {
+      return failure(request.requestId, new AppError("invalid-request"));
+    }
     const origin = deriveOrigin(requested.value);
     if (origin === undefined) return failure(request.requestId, new AppError("unsupported-url"));
 
     if (request.kind === "register-site") {
+      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
       const ensured = await this.#siteAccess.ensureForUrl(requested.value);
       if (!ensured.ok) return failure(request.requestId, ensured.error);
-      if (!await this.#sameTab(active)) return failure(request.requestId, new AppError("invalid-request"));
+      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
       return success(request.requestId, undefined);
     }
 
     if (request.kind === "clear-site") {
+      const snapshot = await this.#repository.readSnapshot(requested.value);
+      if (!snapshot.ok) return failure(request.requestId, snapshot.error);
+      const latest = Math.max(snapshot.value.revision, this.#deliveredRevision.get(active.id) ?? 0);
+      const revision = nextRevision(latest);
+      if (revision === undefined) return failure(request.requestId, new AppError("invalid-stored-data"));
+      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
       const cleared = await this.#repository.clearOrigin(origin);
       if (!cleared.ok) return failure(request.requestId, cleared.error);
+      this.#diagnostics.delete(active.id);
+      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
       const unregistered = await this.#siteAccess.unregisterOrigin(origin);
       if (!unregistered.ok) return failure(request.requestId, unregistered.error);
-      if (!await this.#sameTab(active)) return failure(request.requestId, new AppError("invalid-request"));
-      const delivered = await this.#messenger.deliver(active.id, { kind: "clear-overlay", revision: 0 });
+      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
+      const delivered = await this.#messenger.deliver(active.id, { kind: "clear-overlay", revision });
       if (!delivered.ok) return failure(request.requestId, deliveryFailure(delivered));
-      this.#deliveredRevision.delete(active.id);
-      this.#diagnostics.delete(active.id);
+      this.#deliveredRevision.set(active.id, revision);
+      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
       return success(request.requestId, undefined);
     }
 
     if (request.kind === "replace-reference") {
+      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
       const replaced = await this.#repository.replaceReference({ url: requested.value, reference: request.reference });
       if (!replaced.ok) return failure(request.requestId, replaced.error);
-      if (!await this.#sameTab(active)) return failure(request.requestId, new AppError("invalid-request"));
+      this.#discardStaleDiagnostic(active.id, replaced.value);
+      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
       const hydration = await this.#repository.readHydration(requested.value);
       if (!hydration.ok) return failure(request.requestId, hydration.error);
+      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
       const delivered = await this.#deliverHydration(active.id, hydration.value);
       if (!delivered.ok) return failure(request.requestId, deliveryFailure(delivered));
+      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
       return success(request.requestId, replaced.value);
     }
 
+    if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
     const updated = await this.#repository.updateSettings({ url: requested.value, patch: request.patch });
     if (!updated.ok) return failure(request.requestId, updated.error);
-    if (!await this.#sameTab(active)) return failure(request.requestId, new AppError("invalid-request"));
+    this.#discardStaleDiagnostic(active.id, updated.value);
+    if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
     const delivered = await this.#deliverSettings(active.id, updated.value);
     if (!delivered.ok) return failure(request.requestId, deliveryFailure(delivered));
+    if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
     return success(request.requestId, updated.value);
+  }
+
+  #diagnosticFor(tabId: number, snapshot: OverlaySnapshot): RenderDiagnostic | null {
+    const diagnostic = this.#diagnostics.get(tabId);
+    if (diagnostic !== undefined && diagnostic.referenceId !== snapshot.reference?.id) {
+      this.#diagnostics.delete(tabId);
+      return null;
+    }
+    return diagnostic ?? null;
+  }
+
+  #discardStaleDiagnostic(tabId: number, snapshot: OverlaySnapshot): void {
+    this.#diagnosticFor(tabId, snapshot);
   }
 
   async #deliverHydration(tabId: number, hydration: Hydration): Promise<Result<void, DeliveryError>> {
@@ -180,9 +240,14 @@ export class BackgroundCoordinator {
     return delivered;
   }
 
-  async #sameTab(expected: ActiveTab): Promise<boolean> {
-    const current = await this.#tabs.getTab(expected.id);
-    return current !== null && current.url === expected.url;
+  async #sameActiveTab(expected: ActiveTab): Promise<boolean> {
+    const current = await this.#tabs.getActiveTab();
+    return current !== null && current.id === expected.id && sameCanonicalPage(current.url, expected.url);
+  }
+
+  async #sameTabPage(tabId: number, expectedUrl: string): Promise<boolean> {
+    const current = await this.#tabs.getTab(tabId);
+    return current !== null && sameCanonicalPage(current.url, expectedUrl);
   }
 
   async #runTab<T>(tabId: number, operation: () => Promise<T>): Promise<T> {

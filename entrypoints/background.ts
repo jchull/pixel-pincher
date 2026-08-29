@@ -15,6 +15,10 @@ function contentSenderFrom(sender: chrome.runtime.MessageSender): ContentSender 
   return { tabId, frameId, url: sender.url };
 }
 
+function isPopupSender(sender: chrome.runtime.MessageSender): boolean {
+  return sender.tab === undefined && sender.id === chrome.runtime.id;
+}
+
 export default defineBackground(() => {
   const repository = new OverlayRepository(createChromeStorageAdapter());
   const siteAccess = new SiteAccessService(createChromeSiteAccessAdapter(), repository);
@@ -45,13 +49,24 @@ export default defineBackground(() => {
   chrome.runtime.onInstalled.addListener(startup);
   chrome.permissions.onRemoved.addListener(startup);
   chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-    const contentSender = contentSenderFrom(sender);
-    if (contentSender !== undefined) {
+    if (sender.tab !== undefined) {
+      const contentSender = contentSenderFrom(sender);
+      if (contentSender === undefined) {
+        sendResponse({ requestId: "invalid", ok: false, error: publicError("invalid-request") });
+        return undefined;
+      }
       const event = parseContentEvent(message);
       if (event.ok) {
         void coordinator.handleContent(event.value, contentSender);
         return undefined;
       }
+      sendResponse({ requestId: "invalid", ok: false, error: publicError("invalid-request") });
+      return undefined;
+    }
+
+    if (!isPopupSender(sender)) {
+      sendResponse({ requestId: "invalid", ok: false, error: publicError("invalid-request") });
+      return undefined;
     }
 
     const request = parsePopupRequest(message);
