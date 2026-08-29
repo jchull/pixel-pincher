@@ -231,7 +231,9 @@ function parseDataUrl(value: unknown, code: ParseErrorCode, expectedMimeType?: M
   const dataUrl = readString(value);
   if (dataUrl === undefined || utf8ByteLength(dataUrl) > MAX_IMAGE_ENCODED_BYTES) return failure(code);
   const match = /^data:(image\/png|image\/jpeg|image\/webp|image\/svg\+xml);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
-  if (match === null) return failure(code);
+  // The exact-match check rejects any unmatched suffix (e.g. a trailing line
+  // terminator) so the returned value is always the full validated input.
+  if (match === null || match[0] !== dataUrl) return failure(code);
   const mimeType = match[1];
   const payload = match[2];
   if (!isMimeType(mimeType) || (expectedMimeType !== undefined && mimeType !== expectedMimeType) || !BASE64.test(payload)) return failure(code);

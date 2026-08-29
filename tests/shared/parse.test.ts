@@ -109,6 +109,15 @@ describe("boundary parsers", () => {
     expect(parseImageRecordV1({ schemaVersion: 1, referenceId: id, dataUrl: oversizedDataUrl }).ok).toBe(false);
   });
 
+  it("rejects data URLs with trailing line terminators or any unmatched suffix", () => {
+    for (const suffix of ["\n", "\r\n", "\r", " ", "\n\n", ";", "A"]) {
+      expect(parseImageRecordV1({ schemaVersion: 1, referenceId: id, dataUrl: dataUrl + suffix }).ok, `record [${suffix}]`).toBe(false);
+      expect(parseImportedReference({ ...importedReference, dataUrl: dataUrl + suffix }).ok, `reference [${suffix}]`).toBe(false);
+    }
+    // The canonical URL still parses and round-trips exactly.
+    expect(parseImageRecordV1({ schemaVersion: 1, referenceId: id, dataUrl }).ok).toBe(true);
+  });
+
   it("parses each popup request and rejects accessors, inherited fields, and extras", () => {
     expect(parsePopupRequest({ kind: "register-site", requestId: "a", url: "https://example.com/page" }).ok).toBe(true);
     expect(parsePopupRequest({ kind: "clear-site", requestId: "a", url: "ftp://example.com/" }).ok).toBe(false);

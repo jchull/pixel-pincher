@@ -11,7 +11,7 @@ import {
 } from "../shared/contracts";
 
 /** The minimal File-shaped fields the import path needs from a picked file. */
-export type ImportFileLike = Readonly<{ name: string; type: string }>;
+export type ImportFileLike = Readonly<{ name: string; type: string; size: number }>;
 
 export type ImportedDimensions = Readonly<{ width: number; height: number }>;
 
@@ -34,6 +34,12 @@ const RIFF_MAGIC = [0x52, 0x49, 0x46, 0x46] as const;
 const WEBP_MAGIC = [0x57, 0x45, 0x42, 0x50] as const;
 const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const BASE64_FLUSH_CHARS = 32_768;
+/**
+ * The widest `data:<mime>;base64,` prefix among the supported types
+ * (`data:image/svg+xml;base64,`). Used to bound the encoded size of a file
+ * before its bytes are read.
+ */
+const DATA_URL_PREFIX_BYTES = "data:image/svg+xml;base64,".length;
 /** SVG sniff window: a well-formed SVG declares its root within the first 16 KiB. */
 const SVG_SCAN_BYTES = 16_384;
 
@@ -90,9 +96,43 @@ function looksLikeSvg(bytes: Uint8Array): boolean {
       text = text.slice(end + 3);
       continue;
     }
+    if (text.startsWith("<!DOCTYPE")) {
+      const end = findDoctypeEnd(text);
+      if (end === -1) return false;
+      text = text.slice(end + 1);
+      continue;
+    }
     break;
   }
   return /^<svg(?=[\s/>]|$)/.test(text);
+}
+
+/**
+ * Finds the closing `>` of a `<!DOCTYPE ...>` declaration while staying
+ * opaque: quoted strings and the bracketed internal subset are skipped so a
+ * `>` inside a system literal or entity value cannot end the scan early.
+ * Returns -1 when the declaration does not close within the scanned window,
+ * keeping the sniff bounded.
+ */
+function findDoctypeEnd(text: string): number {
+  const start = "<!DOCTYPE".length;
+  let bracketDepth = 0;
+  let quote = "";
+  for (let i = start; i < text.length; i++) {
+    const char = text.charAt(i);
+    if (quote !== "") {
+      if (char === quote) quote = "";
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === "[") bracketDepth += 1;
+    else if (char === "]") bracketDepth = Math.max(0, bracketDepth - 1);
+    else if (char === ">" && bracketDepth === 0) return i;
+  }
+  return -1;
 }
 
 function base64Encode(bytes: Uint8Array): string {
@@ -180,12 +220,20 @@ export function createImportReference(deps: ImportDependencies) {
     file: ImportFileLike,
   ): Promise<Result<ImportedReference, ImportError>> {
     if (typeof file !== "object" || file === null || typeof file.name !== "string" ||
-      file.name.length === 0 || typeof file.type !== "string") {
+      file.name.length === 0 || typeof file.type !== "string" ||
+      typeof file.size !== "number" || !Number.isSafeInteger(file.size) || file.size < 0) {
       return { ok: false, error: typeError() };
+    }
+
+    // base64 expands every 3 input bytes to 4 characters; reject files whose
+    // encoded form cannot fit the limit before any bytes are allocated.
+    if (DATA_URL_PREFIX_BYTES + Math.ceil(file.size / 3) * 4 > MAX_IMAGE_ENCODED_BYTES) {
+      return { ok: false, error: tooLargeError() };
     }
 
     const bytes = await readFileSafely(deps.readFile, file);
     if (bytes === null) return { ok: false, error: decodeError() };
+    if (bytes.byteLength !== file.size) return { ok: false, error: decodeError() };
 
     const detected = sniffImageMimeType(bytes);
     if (detected === null) return { ok: false, error: typeError() };

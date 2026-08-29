@@ -29,6 +29,16 @@ function base64Decode(payload: string): Uint8Array {
   return new Uint8Array(Buffer.from(payload, "base64"));
 }
 
+/** A File-shaped input whose declared size matches the fixture bytes. */
+function fixtureFile(name: string, type: string): ImportFileLike {
+  return { name, type, size: fixtureBytes(name).byteLength };
+}
+
+/** A File-shaped input sized to synthetic bytes the harness read will be mocked with. */
+function sizedFile(bytes: Uint8Array, type: string): ImportFileLike {
+  return { name: "big.png", type, size: bytes.byteLength };
+}
+
 type FixtureCase = Readonly<{
   file: string;
   declaredType: string;
@@ -44,6 +54,7 @@ const ACCEPTED_FIXTURES: FixtureCase[] = [
   { file: "graphic.svg", declaredType: "image/svg+xml", mimeType: "image/svg+xml", width: 20, height: 10 },
   { file: "graphic-prolog.svg", declaredType: "image/svg+xml", mimeType: "image/svg+xml", width: 30, height: 15 },
   { file: "graphic-script.svg", declaredType: "image/svg+xml", mimeType: "image/svg+xml", width: 20, height: 10 },
+  { file: "graphic-doctype.svg", declaredType: "image/svg+xml", mimeType: "image/svg+xml", width: 16, height: 8 },
 ];
 
 type Harness = Readonly<{
@@ -78,7 +89,7 @@ describe("import-reference", () => {
   it("accepts every supported image type with byte-sniffed metadata", async () => {
     for (const fixture of ACCEPTED_FIXTURES) {
       const { importer, decodeImage } = createHarness({ dimensions: { width: fixture.width, height: fixture.height } });
-      const result = await importer({ name: fixture.file, type: fixture.declaredType });
+      const result = await importer(fixtureFile(fixture.file, fixture.declaredType));
       expect(result.ok, fixture.file).toBe(true);
       if (!result.ok) continue;
       const { metadata, dataUrl } = result.value;
@@ -101,7 +112,7 @@ describe("import-reference", () => {
 
   it("accepts an SVG whose script content is carried only as opaque data URL bytes", async () => {
     const { importer } = createHarness({ dimensions: { width: 20, height: 10 } });
-    const result = await importer({ name: "graphic-script.svg", type: "image/svg+xml" });
+    const result = await importer(fixtureFile("graphic-script.svg", "image/svg+xml"));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const source = Buffer.from(result.value.dataUrl.split(",")[1]!, "base64").toString("utf8");
@@ -112,9 +123,29 @@ describe("import-reference", () => {
     expect(parseImportedReference({ metadata: result.value.metadata, dataUrl: result.value.dataUrl }).ok).toBe(true);
   });
 
+  it("classifies SVG 1.1 documents with a DOCTYPE without parsing markup, and rejects unbounded ones", async () => {
+    const { importer } = createHarness({ dimensions: { width: 16, height: 8 } });
+    const result = await importer(fixtureFile("graphic-doctype.svg", "image/svg+xml"));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const source = Buffer.from(result.value.dataUrl.split(",")[1]!, "base64").toString("utf8");
+    // The DOCTYPE, including a `>` inside the quoted entity value, stays opaque bytes.
+    expect(source).toContain("<!DOCTYPE svg PUBLIC");
+    expect(source).toContain("<!ENTITY arrow \"a>b\">");
+
+    const unbounded = createHarness();
+    // Constructed with the test-realm Uint8Array (as fixtureBytes does) because
+    // jsdom leaves TextEncoder in the Node realm, where instanceof fails.
+    const doctypeOnly = new Uint8Array(Buffer.from(`<!DOCTYPE svg SYSTEM "${"a".repeat(20 * 1024)}"`));
+    unbounded.readFile.mockResolvedValueOnce(doctypeOnly);
+    const unboundedResult = await unbounded.importer(sizedFile(doctypeOnly, "image/svg+xml"));
+    expectImportError(unboundedResult, "invalid-image-type");
+    expect(unbounded.decodeImage).not.toHaveBeenCalled();
+  });
+
   it("tolerates declared MIME case and surrounding whitespace but rejects every mismatch", async () => {
     const lenient = createHarness();
-    await expect(lenient.importer({ name: "image.png", type: "  Image/PNG  " })).resolves.toMatchObject({ ok: true });
+    await expect(lenient.importer(fixtureFile("image.png", "  Image/PNG  "))).resolves.toMatchObject({ ok: true });
 
     const mismatches: Array<Readonly<{ file: string; declaredType: string }>> = [
       { file: "image.png", declaredType: "image/jpeg" },
@@ -127,7 +158,7 @@ describe("import-reference", () => {
     ];
     for (const mismatch of mismatches) {
       const { importer, decodeImage } = createHarness();
-      const result = await importer({ name: mismatch.file, type: mismatch.declaredType });
+      const result = await importer(fixtureFile(mismatch.file, mismatch.declaredType));
       expectImportError(result, "invalid-image-type");
       expect(decodeImage).not.toHaveBeenCalled();
     }
@@ -136,7 +167,7 @@ describe("import-reference", () => {
   it("rejects unknown image types before decoding", async () => {
     for (const file of ["image.gif", "notes.txt"]) {
       const { importer, decodeImage } = createHarness();
-      const result = await importer({ name: file, type: "image/png" });
+      const result = await importer(fixtureFile(file, "image/png"));
       expectImportError(result, "invalid-image-type");
       expect(decodeImage).not.toHaveBeenCalled();
     }
@@ -144,7 +175,7 @@ describe("import-reference", () => {
 
   it("rejects a truncated PNG whose magic passes sniffing but whose decode fails", async () => {
     const { importer, decodeImage } = createHarness({ decodeError: true });
-    const result = await importer({ name: "truncated.png", type: "image/png" });
+    const result = await importer(fixtureFile("truncated.png", "image/png"));
     expectImportError(result, "image-decode-failed");
     expect(decodeImage).toHaveBeenCalledOnce();
   });
@@ -152,14 +183,21 @@ describe("import-reference", () => {
   it("rejects unreadable files and malformed decode results", async () => {
     const failingRead = createHarness();
     failingRead.readFile.mockRejectedValueOnce(new Error("read failed"));
-    expectImportError(await failingRead.importer({ name: "image.png", type: "image/png" }), "image-decode-failed");
+    expectImportError(await failingRead.importer(fixtureFile("image.png", "image/png")), "image-decode-failed");
 
     const nonBytes = createHarness();
     nonBytes.readFile.mockResolvedValueOnce("not bytes" as unknown as Uint8Array);
-    expectImportError(await nonBytes.importer({ name: "image.png", type: "image/png" }), "image-decode-failed");
+    expectImportError(await nonBytes.importer(fixtureFile("image.png", "image/png")), "image-decode-failed");
 
     const decodeFailure = createHarness({ decodeError: true });
-    expectImportError(await decodeFailure.importer({ name: "image.png", type: "image/png" }), "image-decode-failed");
+    expectImportError(await decodeFailure.importer(fixtureFile("image.png", "image/png")), "image-decode-failed");
+
+    const sizeMismatch = createHarness();
+    expectImportError(
+      await sizeMismatch.importer({ name: "image.png", type: "image/png", size: fixtureBytes("image.png").byteLength + 1 }),
+      "image-decode-failed",
+    );
+    expect(sizeMismatch.decodeImage).not.toHaveBeenCalled();
 
     for (const dimensions of [
       { width: 0, height: 10 },
@@ -170,47 +208,64 @@ describe("import-reference", () => {
       { width: 10, height: Number.POSITIVE_INFINITY },
     ]) {
       const { importer } = createHarness({ dimensions });
-      expectImportError(await importer({ name: "image.png", type: "image/png" }), "image-decode-failed");
+      expectImportError(await importer(fixtureFile("image.png", "image/png")), "image-decode-failed");
     }
 
     const badId = createHarness();
     badId.randomReferenceId.mockReturnValueOnce("not-a-uuid");
-    expectImportError(await badId.importer({ name: "image.png", type: "image/png" }), "image-decode-failed");
+    expectImportError(await badId.importer(fixtureFile("image.png", "image/png")), "image-decode-failed");
 
     const badTimestamp = createHarness();
     badTimestamp.currentTimestamp.mockReturnValueOnce(-1);
-    expectImportError(await badTimestamp.importer({ name: "image.png", type: "image/png" }), "image-decode-failed");
+    expectImportError(await badTimestamp.importer(fixtureFile("image.png", "image/png")), "image-decode-failed");
   });
 
   it("rejects malformed file shapes as invalid image types", async () => {
     const { importer } = createHarness();
-    expectImportError(await importer({ name: "", type: "image/png" }), "invalid-image-type");
-    expectImportError(await importer({ name: "image.png", type: 42 as unknown as string }), "invalid-image-type");
+    expectImportError(await importer({ name: "", type: "image/png", size: 1 }), "invalid-image-type");
+    expectImportError(await importer({ name: "image.png", type: 42 as unknown as string, size: 1 }), "invalid-image-type");
+    expectImportError(await importer({ name: "image.png", type: "image/png" } as unknown as ImportFileLike), "invalid-image-type");
+    expectImportError(await importer({ name: "image.png", type: "image/png", size: -1 }), "invalid-image-type");
+    expectImportError(await importer({ name: "image.png", type: "image/png", size: 1.5 }), "invalid-image-type");
     expectImportError(await importer(null as unknown as ImportFileLike), "invalid-image-type");
   });
 
   it("rejects files whose decoded pixels exceed the limit, accepting the boundary", async () => {
     const oversized = createHarness({ dimensions: { width: 7_000, height: 6_000 } });
-    expectImportError(await oversized.importer({ name: "image.png", type: "image/png" }), "image-too-many-pixels");
+    expectImportError(await oversized.importer(fixtureFile("image.png", "image/png")), "image-too-many-pixels");
 
     const justOver = createHarness({ dimensions: { width: 40_001, height: 1_000 } });
-    expectImportError(await justOver.importer({ name: "image.png", type: "image/png" }), "image-too-many-pixels");
+    expectImportError(await justOver.importer(fixtureFile("image.png", "image/png")), "image-too-many-pixels");
 
     const boundary = createHarness({ dimensions: { width: 20_000, height: 2_000 } });
-    await expect(boundary.importer({ name: "image.png", type: "image/png" })).resolves.toMatchObject({ ok: true });
+    await expect(boundary.importer(fixtureFile("image.png", "image/png"))).resolves.toMatchObject({ ok: true });
   });
 
-  it("enforces the encoded data URL limit both before and after base64 expansion", async () => {
+  it("rejects over-limit files before reading, accounting for base64 and data URL expansion", async () => {
     const rawOversized = createHarness();
-    rawOversized.readFile.mockResolvedValueOnce(pngLikeBytes(MAX_ENCODED + 1));
-    const rawResult = await rawOversized.importer({ name: "big.png", type: "image/png" });
+    const rawResult = await rawOversized.importer({ name: "big.png", type: "image/png", size: MAX_ENCODED + 1 });
     expectImportError(rawResult, "image-too-large");
+    expect(rawOversized.readFile).not.toHaveBeenCalled();
     expect(rawOversized.decodeImage).not.toHaveBeenCalled();
 
-    // 6 MiB of raw bytes fits the input limit but expands past 8 MiB as base64.
-    const expanding = createHarness({ dimensions: { width: 1, height: 1 } });
-    expanding.readFile.mockResolvedValueOnce(pngLikeBytes(6 * 1024 * 1024));
-    expectImportError(await expanding.importer({ name: "big.png", type: "image/png" }), "image-too-large");
+    // 6 MiB of raw bytes fits the raw limit but expands past 8 MiB as a base64 data URL.
+    const expanding = createHarness();
+    const expandResult = await expanding.importer({ name: "big.png", type: "image/png", size: 6 * 1024 * 1024 });
+    expectImportError(expandResult, "image-too-large");
+    expect(expanding.readFile).not.toHaveBeenCalled();
+
+    // Boundary: the largest size whose worst-case encoded form still fits the limit.
+    const boundarySize = 6_291_435;
+    const boundary = createHarness({ dimensions: { width: 1, height: 1 } });
+    boundary.readFile.mockResolvedValueOnce(pngLikeBytes(boundarySize));
+    const boundaryResult = await boundary.importer({ name: "big.png", type: "image/png", size: boundarySize });
+    expect(boundaryResult.ok).toBe(true);
+    expect(boundary.readFile).toHaveBeenCalledOnce();
+
+    const overBoundary = createHarness();
+    const overResult = await overBoundary.importer({ name: "big.png", type: "image/png", size: boundarySize + 1 });
+    expectImportError(overResult, "image-too-large");
+    expect(overBoundary.readFile).not.toHaveBeenCalled();
   });
 
   describe("Task 4 handoff", () => {
@@ -307,7 +362,7 @@ describe("import-reference", () => {
     it("hands a successful import to Task 4 replace-reference and delivers exactly one hydration", async () => {
       const { importer, decodeImage } = createHarness({ dimensions: { width: 1, height: 1 } });
       const harness = createCoordinatorHarness();
-      const result = await importOrDispatch(importer, { name: "image.png", type: "image/png" }, harness);
+      const result = await importOrDispatch(importer, fixtureFile("image.png", "image/png"), harness);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       const { reference } = { reference: result.value };
@@ -330,27 +385,27 @@ describe("import-reference", () => {
 
     it("never dispatches replace-reference for rejected imports", async () => {
       const rejected: Array<Readonly<{ file: ImportFileLike; code: string; dimensions?: ImportedDimensions; failRead?: boolean; decodeError?: boolean }>> = [
-        { file: { name: "image.png", type: "image/jpeg" }, code: "invalid-image-type" },
-        { file: { name: "graphic.svg", type: "image/png" }, code: "invalid-image-type" },
-        { file: { name: "graphic.svg", type: "" }, code: "invalid-image-type" },
-        { file: { name: "image.gif", type: "image/gif" }, code: "invalid-image-type" },
-        { file: { name: "notes.txt", type: "text/plain" }, code: "invalid-image-type" },
-        { file: { name: "truncated.png", type: "image/png" }, code: "image-decode-failed", decodeError: true },
-        { file: { name: "image.png", type: "image/png" }, code: "image-decode-failed", failRead: true },
-        { file: { name: "image.png", type: "image/png" }, code: "image-decode-failed", dimensions: { width: 0, height: 1 } },
-        { file: { name: "image.png", type: "image/png" }, code: "image-too-many-pixels", dimensions: { width: 7_000, height: 6_000 } },
-        { file: { name: "big.png", type: "image/png" }, code: "image-too-large" },
+        { file: fixtureFile("image.png", "image/jpeg"), code: "invalid-image-type" },
+        { file: fixtureFile("graphic.svg", "image/png"), code: "invalid-image-type" },
+        { file: fixtureFile("graphic.svg", ""), code: "invalid-image-type" },
+        { file: fixtureFile("image.gif", "image/gif"), code: "invalid-image-type" },
+        { file: fixtureFile("notes.txt", "text/plain"), code: "invalid-image-type" },
+        { file: fixtureFile("truncated.png", "image/png"), code: "image-decode-failed", decodeError: true },
+        { file: fixtureFile("image.png", "image/png"), code: "image-decode-failed", failRead: true },
+        { file: fixtureFile("image.png", "image/png"), code: "image-decode-failed", dimensions: { width: 0, height: 1 } },
+        { file: fixtureFile("image.png", "image/png"), code: "image-too-many-pixels", dimensions: { width: 7_000, height: 6_000 } },
+        { file: { name: "big.png", type: "image/png", size: MAX_ENCODED + 1 }, code: "image-too-large" },
       ];
 
       for (const testCase of rejected) {
         const { importer, readFile } = createHarness({ dimensions: testCase.dimensions, decodeError: testCase.decodeError ?? false });
         if (testCase.failRead) readFile.mockRejectedValueOnce(new Error("read failed"));
-        if (testCase.file.name === "big.png") readFile.mockResolvedValueOnce(pngLikeBytes(MAX_ENCODED + 1));
         const harness = createCoordinatorHarness();
         const result = await importOrDispatch(importer, testCase.file, harness);
         expect(result.ok, `${testCase.file.name} [${testCase.code}]`).toBe(false);
         if (result.ok) throw new Error("Rejected import must not produce a dispatch.");
         expect(result.error.code).toBe(testCase.code);
+        if (testCase.code === "image-too-large") expect(readFile).not.toHaveBeenCalled();
         expect(harness.repository.replaceReference).not.toHaveBeenCalled();
         expect(harness.send).not.toHaveBeenCalled();
       }
