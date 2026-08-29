@@ -183,7 +183,12 @@ export class BackgroundCoordinator {
       const ensured = await this.#siteAccess.ensureForUrl(requested.value);
       if (!ensured.ok) return failure(request.requestId, ensured.error);
       if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
-      return success(request.requestId, undefined);
+      const injected = await this.#siteAccess.injectForUrl(requested.value, active.id);
+      if (!injected.ok) return failure(request.requestId, injected.error);
+      if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
+      const snapshot = await this.#repository.readSnapshot(requested.value);
+      if (!snapshot.ok) return failure(request.requestId, snapshot.error);
+      return success(request.requestId, snapshot.value);
     }
 
     if (request.kind === "clear-site") {

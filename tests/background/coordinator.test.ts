@@ -108,7 +108,7 @@ describe("BackgroundCoordinator", () => {
     const imported = reference();
 
     await expect(harness.coordinator.handlePopup({ kind: "get-tab-state", requestId: "state" })).resolves.toMatchObject({ ok: true });
-    await expect(harness.coordinator.handlePopup({ kind: "register-site", requestId: "register", url: pageUrlWithOtherHash })).resolves.toEqual({ requestId: "register", ok: true, value: undefined });
+    await expect(harness.coordinator.handlePopup({ kind: "register-site", requestId: "register", url: pageUrlWithOtherHash })).resolves.toEqual({ requestId: "register", ok: true, value: snapshot() });
     await expect(harness.coordinator.handlePopup({ kind: "replace-reference", requestId: "replace", url: pageUrlWithOtherHash, reference: imported })).resolves.toMatchObject({ ok: true });
     await expect(harness.coordinator.handlePopup({ kind: "update-settings", requestId: "update", url: pageUrlWithOtherHash, patch: { kind: "opacity", opacity: 0.7 } })).resolves.toMatchObject({ ok: true });
     await expect(harness.coordinator.handlePopup({ kind: "clear-site", requestId: "clear", url: pageUrlWithOtherHash })).resolves.toEqual({ requestId: "clear", ok: true, value: undefined });
@@ -117,6 +117,10 @@ describe("BackgroundCoordinator", () => {
     expect(harness.repository.updateSettings).toHaveBeenCalledOnce();
     expect(harness.repository.clearOrigin).toHaveBeenCalledOnce();
     expect(harness.siteAccess.ensureForUrl).toHaveBeenCalledOnce();
+    expect(harness.siteAccess.injectForUrl).toHaveBeenCalledOnce();
+    const [registeredUrl, registeredTabId] = harness.siteAccess.injectForUrl.mock.calls[0] ?? [];
+    expect(registeredUrl?.toString()).toBe(pageUrlWithOtherHash);
+    expect(registeredTabId).toBe(9);
     expect(harness.siteAccess.unregisterOrigin).toHaveBeenCalledOnce();
     expect(harness.send.mock.calls.map(([, request]) => request.kind)).toEqual(["hydrate-overlay", "apply-settings", "clear-overlay"]);
   });
@@ -147,6 +151,38 @@ describe("BackgroundCoordinator", () => {
     await expect(afterMutation.coordinator.handlePopup({ kind: "update-settings", requestId: "after-mutation", url: pageUrl, patch: { kind: "opacity", opacity: 0.7 } })).resolves.toMatchObject({ ok: false, error: { code: "invalid-request" } });
     expect(afterMutation.repository.updateSettings).toHaveBeenCalledOnce();
     expect(afterMutation.send).not.toHaveBeenCalled();
+  });
+
+  it("injects after a successful register and skips injection when the target changes", async () => {
+    const harness = createCoordinator();
+    const order: string[] = [];
+    harness.siteAccess.ensureForUrl.mockImplementation(async () => {
+      order.push("ensure");
+      return { ok: true, value: undefined };
+    });
+    harness.siteAccess.injectForUrl.mockImplementation(async () => {
+      order.push("inject");
+      return { ok: true, value: undefined };
+    });
+
+    await expect(harness.coordinator.handlePopup({ kind: "register-site", requestId: "register", url: pageUrl })).resolves.toEqual({ requestId: "register", ok: true, value: snapshot() });
+    expect(harness.siteAccess.injectForUrl).toHaveBeenCalledOnce();
+    const [injectedUrl, injectedTabId] = harness.siteAccess.injectForUrl.mock.calls[0] ?? [];
+    expect(injectedUrl?.toString()).toBe(pageUrl);
+    expect(injectedTabId).toBe(9);
+    expect(order).toEqual(["ensure", "inject"]);
+    expect(harness.send).not.toHaveBeenCalled();
+
+    const moved = createCoordinator();
+    moved.siteAccess.ensureForUrl.mockImplementation(async () => {
+      // The tab navigates after the permission/registration succeeds but before the recheck.
+      moved.tabs.active = { id: 9, url: otherPageUrl };
+      moved.tabs.tabs.set(9, { id: 9, url: otherPageUrl });
+      return { ok: true, value: undefined };
+    });
+    await expect(moved.coordinator.handlePopup({ kind: "register-site", requestId: "moved", url: pageUrl })).resolves.toMatchObject({ ok: false, error: { code: "invalid-request" } });
+    expect(moved.siteAccess.injectForUrl).not.toHaveBeenCalled();
+    expect(moved.send).not.toHaveBeenCalled();
   });
 
   it("sends a clear revision newer than both stored and previously delivered state", async () => {
