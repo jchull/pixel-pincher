@@ -121,10 +121,11 @@ export class BackgroundCoordinator {
         const tabs = await this.#tabs.getTabs();
         await Promise.all(tabs.map(async (tab) => {
           const parsed = parseSupportedUrl(tab.url);
-          if (!parsed.ok) return;
+          if (!parsed.ok) return undefined;
           const origin = deriveOrigin(parsed.value);
-          if (origin === undefined || !removed.has(origin)) return;
+          if (origin === undefined || !removed.has(origin)) return undefined;
           await this.#runTab(tab.id, async () => this.#clearRemovedTab(tab, parsed.value));
+          return undefined;
         }));
       } catch {
         // Permission removal cleanup is best effort; reconciliation still runs.
@@ -286,6 +287,11 @@ export class BackgroundCoordinator {
     if (request.kind === "get-tab-state") {
       const enabled = await this.#siteAccess.has(activeOrigin);
       if (!enabled.ok) return failure(request.requestId, enabled.error);
+      if (enabled.value) {
+        if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));
+        const injected = await this.#siteAccess.injectForUrl(url.value, active.id);
+        if (!injected.ok) return failure(request.requestId, injected.error);
+      }
       const snapshot = await this.#repository.readSnapshot(url.value);
       if (!snapshot.ok) return failure(request.requestId, snapshot.error);
       if (!await this.#sameActiveTab(active)) return failure(request.requestId, new AppError("invalid-request"));

@@ -131,8 +131,11 @@ describe("BackgroundCoordinator", () => {
     expect(harness.repository.updateSettings).toHaveBeenCalledOnce();
     expect(harness.repository.clearOrigin).toHaveBeenCalledOnce();
     expect(harness.siteAccess.ensureForUrl).toHaveBeenCalledOnce();
-    expect(harness.siteAccess.injectForUrl).toHaveBeenCalledOnce();
-    const [registeredUrl, registeredTabId] = harness.siteAccess.injectForUrl.mock.calls[0] ?? [];
+    expect(harness.siteAccess.injectForUrl).toHaveBeenCalledTimes(2);
+    const [openedUrl, openedTabId] = harness.siteAccess.injectForUrl.mock.calls[0] ?? [];
+    expect(openedUrl?.toString()).toBe(pageUrl);
+    expect(openedTabId).toBe(9);
+    const [registeredUrl, registeredTabId] = harness.siteAccess.injectForUrl.mock.calls[1] ?? [];
     expect(registeredUrl?.toString()).toBe(pageUrlWithOtherHash);
     expect(registeredTabId).toBe(9);
     expect(harness.siteAccess.unregisterOrigin).toHaveBeenCalledOnce();
