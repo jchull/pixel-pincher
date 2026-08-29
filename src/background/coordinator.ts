@@ -7,7 +7,9 @@ import {
   type PopupRequest,
   type PopupResponse,
   type RenderDiagnostic,
+  type ReferenceMetadata,
   type Result,
+  type SettingsPatch,
   type TabState,
   toPublicError,
 } from "../shared/contracts";
@@ -16,6 +18,8 @@ import { parseSupportedUrl } from "../shared/parse";
 import type { OverlayRepository } from "./repository";
 import type { SiteAccessService } from "./site-access";
 import { sameCanonicalPage, TabMessenger, type TabPage } from "./tab-messenger";
+import type { PixelPincherCommand } from "./commands";
+import type { TopFrameNavigation } from "./navigation";
 
 export type ActiveTab = TabPage;
 export type ContentSender = Readonly<{ tabId: number; frameId: number; url: string }>;
@@ -23,7 +27,11 @@ export type ContentSender = Readonly<{ tabId: number; frameId: number; url: stri
 type Repository = Pick<OverlayRepository,
   "cleanupOrphans" | "clearOrigin" | "readHydration" | "readSnapshot" | "replaceReference" | "updatePlacement" | "updateSettings">;
 
-type DeliveryState = Readonly<{ pageKey: string; revision: number }>;
+type DeliveryState = Readonly<{
+  pageKey: string;
+  revision: number;
+  referenceId: ReferenceMetadata["id"] | null;
+}>;
 type SiteAccess = Pick<SiteAccessService, "ensureForUrl" | "has" | "injectForUrl" | "reconcile" | "unregisterOrigin">;
 
 export interface TabResolver {
@@ -72,6 +80,36 @@ export class BackgroundCoordinator {
       this.#repository.cleanupOrphans().catch(() => undefined),
       this.#siteAccess.reconcile().catch(() => undefined),
     ]);
+  }
+
+  async handleCommand(command: PixelPincherCommand): Promise<void> {
+    const active = await this.#tabs.getActiveTab();
+    if (active === null) return;
+    await this.#runTab(active.id, async () => this.#handleCommandForActive(command, active));
+  }
+
+  async handleNavigation(navigation: TopFrameNavigation): Promise<void> {
+    if (navigation.frameId !== 0) return;
+    const parsed = parseSupportedUrl(navigation.url);
+    if (!parsed.ok) return;
+    await this.#runTab(navigation.tabId, async () => {
+      if (!await this.#sameTabPage(navigation.tabId, navigation.url)) return;
+      const origin = deriveOrigin(parsed.value);
+      if (origin === undefined) return;
+      const enabled = await this.#siteAccess.has(origin);
+      if (!enabled.ok || !enabled.value || !await this.#sameTabPage(navigation.tabId, navigation.url)) return;
+      const current = await this.#repository.readSnapshot(parsed.value);
+      if (!current.ok || !await this.#sameTabPage(navigation.tabId, navigation.url)) return;
+      this.#discardStaleDiagnostic(navigation.tabId, current.value);
+      const delivered = this.#deliveredState.get(navigation.tabId);
+      if (delivered?.referenceId === current.value.reference?.id) {
+        await this.#deliverSettings(navigation.tabId, parsed.value, current.value);
+        return;
+      }
+      const hydration = await this.#repository.readHydration(parsed.value);
+      if (!hydration.ok || !await this.#sameTabPage(navigation.tabId, navigation.url)) return;
+      await this.#deliverHydration(navigation.tabId, parsed.value, hydration.value);
+    });
   }
 
   async handlePermissionsRemoved(origins: readonly string[]): Promise<void> {
@@ -250,6 +288,48 @@ export class BackgroundCoordinator {
     return success(request.requestId, updated.value);
   }
 
+  async #handleCommandForActive(command: PixelPincherCommand, active: ActiveTab): Promise<void> {
+    const parsed = parseSupportedUrl(active.url);
+    if (!parsed.ok) return;
+    const origin = deriveOrigin(parsed.value);
+    if (origin === undefined) return;
+    const enabled = await this.#siteAccess.has(origin);
+    if (!enabled.ok || !enabled.value || !await this.#sameActiveTab(active)) return;
+    const current = await this.#repository.readSnapshot(parsed.value);
+    if (!current.ok || current.value.reference === null || !await this.#sameActiveTab(active)) return;
+
+    const patch = this.#commandPatch(command, current.value);
+    if (patch === undefined) return;
+    const updated = await this.#repository.updateSettings({ url: parsed.value, patch });
+    if (!updated.ok || !await this.#sameActiveTab(active)) return;
+    this.#discardStaleDiagnostic(active.id, updated.value);
+    await this.#deliverSettings(active.id, parsed.value, updated.value);
+  }
+
+  #commandPatch(command: PixelPincherCommand, snapshot: OverlaySnapshot): SettingsPatch | undefined {
+    switch (command) {
+      case "toggle-visibility":
+        return { kind: "visibility", visible: !snapshot.settings.visible };
+      case "nudge-left":
+        return this.#nudge(snapshot, -1, 0);
+      case "nudge-right":
+        return this.#nudge(snapshot, 1, 0);
+      case "nudge-up":
+        return this.#nudge(snapshot, 0, -1);
+      case "nudge-down":
+        return this.#nudge(snapshot, 0, 1);
+    }
+  }
+
+  #nudge(snapshot: OverlaySnapshot, x: number, y: number): SettingsPatch | undefined {
+    const placement = { x: snapshot.settings.placement.x + x, y: snapshot.settings.placement.y + y };
+    if (!Number.isSafeInteger(placement.x) || !Number.isSafeInteger(placement.y) ||
+      placement.x < -1_000_000 || placement.x > 1_000_000 || placement.y < -1_000_000 || placement.y > 1_000_000) {
+      return undefined;
+    }
+    return { kind: "placement", placement };
+  }
+
   #diagnosticFor(tabId: number, snapshot: OverlaySnapshot): RenderDiagnostic | null {
     const diagnostic = this.#diagnostics.get(tabId);
     if (diagnostic !== undefined && diagnostic.referenceId !== snapshot.reference?.id) {
@@ -265,14 +345,14 @@ export class BackgroundCoordinator {
 
   async #deliverHydration(tabId: number, expectedUrl: URL, hydration: Hydration): Promise<Result<void, DeliveryError>> {
     const delivered = await this.#messenger.deliver(tabId, expectedUrl, { kind: "hydrate-overlay", hydration });
-    if (delivered.ok) this.#rememberDelivery(tabId, expectedUrl, hydration.snapshot.revision);
+    if (delivered.ok) this.#rememberDelivery(tabId, expectedUrl, hydration.snapshot.revision, hydration.snapshot.reference?.id ?? null);
     return delivered;
   }
 
   async #deliverSettings(tabId: number, expectedUrl: URL, snapshot: OverlaySnapshot): Promise<Result<void, DeliveryError>> {
     if (snapshot.revision <= this.#deliveredRevisionFor(tabId, expectedUrl)) return { ok: true, value: undefined };
     const delivered = await this.#messenger.deliver(tabId, expectedUrl, { kind: "apply-settings", snapshot });
-    if (delivered.ok) this.#rememberDelivery(tabId, expectedUrl, snapshot.revision);
+    if (delivered.ok) this.#rememberDelivery(tabId, expectedUrl, snapshot.revision, snapshot.reference?.id ?? null);
     return delivered;
   }
 
@@ -282,9 +362,9 @@ export class BackgroundCoordinator {
     return pageKey !== undefined && delivered?.pageKey === pageKey ? delivered.revision : 0;
   }
 
-  #rememberDelivery(tabId: number, expectedUrl: URL, revision: number): void {
+  #rememberDelivery(tabId: number, expectedUrl: URL, revision: number, referenceId: DeliveryState["referenceId"] = null): void {
     const pageKey = derivePageKey(expectedUrl);
-    if (pageKey !== undefined) this.#deliveredState.set(tabId, { pageKey, revision });
+    if (pageKey !== undefined) this.#deliveredState.set(tabId, { pageKey, revision, referenceId });
   }
 
   async #clearRemovedTab(tab: ActiveTab, expectedUrl: URL): Promise<void> {

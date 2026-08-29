@@ -1,6 +1,8 @@
 import { defineBackground } from "wxt/utils/define-background";
 
 import { BackgroundCoordinator, createChromeTabResolver, type ContentSender } from "../src/background/coordinator";
+import { handleCommand, isPixelPincherCommand } from "../src/background/commands";
+import { handleTopFrameNavigation } from "../src/background/navigation";
 import { OverlayRepository } from "../src/background/repository";
 import { createChromeSiteAccessAdapter, originFromMatch, SiteAccessService } from "../src/background/site-access";
 import { createChromeStorageAdapter } from "../src/background/storage-adapter";
@@ -43,6 +45,12 @@ export default defineBackground(() => {
 
   chrome.runtime.onStartup.addListener(startup);
   chrome.runtime.onInstalled.addListener(startup);
+  chrome.commands.onCommand.addListener((command) => {
+    if (isPixelPincherCommand(command)) void handleCommand(coordinator, command);
+  });
+  chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
+    void handleTopFrameNavigation(coordinator, { tabId: details.tabId, frameId: details.frameId, url: details.url });
+  });
   chrome.permissions.onRemoved.addListener((permissions) => {
     const removedOrigins = (permissions.origins ?? []).flatMap((match) => {
       const origin = originFromMatch(match);

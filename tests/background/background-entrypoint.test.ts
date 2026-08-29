@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const lifecycle = vi.hoisted(() => {
   type MessageListener = (message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => boolean | undefined;
+  const commandListeners: Array<(command: string) => void> = [];
+  const historyStateListeners: Array<(details: chrome.webNavigation.WebNavigationFramedCallbackDetails) => void> = [];
   const installedListeners: Array<() => void> = [];
   const permissionRemovedListeners: Array<(permissions: chrome.permissions.Permissions) => void> = [];
   const messageListeners: MessageListener[] = [];
@@ -9,6 +11,8 @@ const lifecycle = vi.hoisted(() => {
 
   return {
     cleanupOrphans: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
+    commandListeners,
+    historyStateListeners,
     installedListeners,
     messageListeners,
     permissionRemovedListeners,
@@ -46,6 +50,8 @@ vi.mock("../../src/background/storage-adapter", () => ({
 
 beforeEach(() => {
   lifecycle.cleanupOrphans.mockClear();
+  lifecycle.commandListeners.length = 0;
+  lifecycle.historyStateListeners.length = 0;
   lifecycle.installedListeners.length = 0;
   lifecycle.messageListeners.length = 0;
   lifecycle.permissionRemovedListeners.length = 0;
@@ -55,6 +61,13 @@ beforeEach(() => {
   Object.defineProperty(globalThis, "chrome", {
     configurable: true,
     value: {
+      commands: {
+        onCommand: {
+          addListener(listener: (command: string) => void) {
+            lifecycle.commandListeners.push(listener);
+          },
+        },
+      },
       permissions: {
         onRemoved: {
           addListener(listener: (permissions: chrome.permissions.Permissions) => void) {
@@ -81,7 +94,15 @@ beforeEach(() => {
         },
       },
       tabs: {
+        get: vi.fn().mockResolvedValue({ id: 1, url: "https://example.test/page" }),
         query: vi.fn().mockResolvedValue([{ id: 1, url: "https://example.test/page" }]),
+      },
+      webNavigation: {
+        onHistoryStateUpdated: {
+          addListener(listener: (details: chrome.webNavigation.WebNavigationFramedCallbackDetails) => void) {
+            lifecycle.historyStateListeners.push(listener);
+          },
+        },
       },
     },
     writable: true,
@@ -94,6 +115,8 @@ describe("background entrypoint lifecycle", () => {
 
     expect(lifecycle.startupListeners).toHaveLength(1);
     expect(lifecycle.installedListeners).toHaveLength(1);
+    expect(lifecycle.commandListeners).toHaveLength(1);
+    expect(lifecycle.historyStateListeners).toHaveLength(1);
     expect(lifecycle.permissionRemovedListeners).toHaveLength(1);
     expect(lifecycle.messageListeners).toHaveLength(1);
 
