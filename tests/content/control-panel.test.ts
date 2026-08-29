@@ -120,13 +120,11 @@ describe("ControlPanel", () => {
     expect(host?.style.left).toBe("20px");
     expect(host?.style.top).toBe("30px");
     expect(
-      elements.find((element) => element.classList.contains("reference"))
-        ?.textContent,
-    ).toBe("reference.png · 200 × 100");
+      elements.some((element) => element.classList.contains("reference")),
+    ).toBe(false);
     expect(
-      elements.find((element) => element.classList.contains("visibility"))
-        ?.textContent,
-    ).toContain("Overlay visible");
+      elements.some((element) => element.classList.contains("visibility")),
+    ).toBe(false);
     expect(
       elements
         .find((element) => element.getAttribute("role") === "status")
@@ -310,9 +308,9 @@ describe("ControlPanel", () => {
     );
     expect(host?.style.left).toBe("352px");
     expect(host?.style.top).toBe("260px");
-    expect(
-      elements.find((element) => element.classList.contains("visibility"))
-        ?.textContent,
-    ).toContain("Overlay hidden");
+    const showOverlay = elements.find((element) => element.id === "visible");
+    if (!(showOverlay instanceof HTMLInputElement))
+      throw new Error("Expected show-overlay checkbox.");
+    expect(showOverlay.checked).toBe(false);
   });
 });

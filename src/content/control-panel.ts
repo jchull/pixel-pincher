@@ -59,7 +59,6 @@ type PendingSetting = Readonly<{ patch: SettingsPatch; coalesce: boolean }>;
 
 type PanelElements = Readonly<{
   handle: HTMLButtonElement;
-  reference: HTMLElement;
   live: HTMLElement;
   file: HTMLInputElement;
   visible: HTMLInputElement;
@@ -166,23 +165,10 @@ export class ControlPanel {
     this.#host.style.display = "block";
     this.#host.style.left = `${this.#position.x}px`;
     this.#host.style.top = `${this.#position.y}px`;
-    const reference = snapshot.reference;
-    e.reference.textContent =
-      reference === null
-        ? "No reference image selected."
-        : `${reference.name} · ${reference.width} × ${reference.height}`;
-    e.reference.classList.toggle("none", reference === null);
     const settings = snapshot.settings;
-    const disabled = reference === null;
+    const disabled = snapshot.reference === null;
     e.file.disabled = false;
     e.visible.checked = settings.visible;
-    const visibility = this.#host
-      ? roots.get(this.#host)?.querySelector<HTMLElement>(".visibility")
-      : null;
-    if (visibility !== null && visibility !== undefined)
-      visibility.textContent = settings.visible
-        ? "Overlay visible"
-        : "Overlay hidden";
     e.opacity.value = String(Math.round(settings.opacity * 100));
     e.opacityNumber.value = e.opacity.value;
     e.fitWidth.checked = settings.sizing.kind === "fit-width";
@@ -206,7 +192,7 @@ export class ControlPanel {
       e.y,
     ])
       control.disabled = disabled;
-    e.clear.disabled = reference === null;
+    e.clear.disabled = disabled;
     e.confirm.hidden = !this.#confirmingClear;
     e.clear.textContent = this.#confirmingClear
       ? "Confirm clear site data"
@@ -252,8 +238,6 @@ export class ControlPanel {
         message:
           "Pixel Pincher could not decode that image. See the page console for details.",
       });
-    } finally {
-      this.#elements.file.value = "";
     }
   }
 
@@ -590,10 +574,6 @@ function findOrCreatePanel(
     '<span>Pixel Pincher</span><span class="grip" aria-hidden="true">⠿</span>';
   const content = document.createElement("div");
   content.className = "content";
-  const reference = document.createElement("p");
-  reference.className = "reference";
-  const visibility = document.createElement("p");
-  visibility.className = "visibility";
   const file = document.createElement("input");
   file.id = "reference-file";
   file.type = "file";
@@ -619,16 +599,14 @@ function findOrCreatePanel(
   const drag = checkbox(document, "interaction-drag", "Drag overlay");
   const x = number(document, "x", MIN_PLACEMENT, MAX_PLACEMENT);
   const y = number(document, "y", MIN_PLACEMENT, MAX_PLACEMENT);
+  const quickControls = document.createElement("div");
+  quickControls.className = "quick-controls";
+  quickControls.append(visible.parentElement!, drag.parentElement!);
   appendRangeControl(controls, "Opacity", opacity, opacityNumber);
   appendRangeControl(controls, "Scale", scale, scaleNumber);
   appendLabeled(controls, "X position", x);
   appendLabeled(controls, "Y position", y);
-  controls.append(
-    visible.parentElement!,
-    fitWidth.parentElement!,
-    inverted.parentElement!,
-    drag.parentElement!,
-  );
+  controls.append(fitWidth.parentElement!, inverted.parentElement!);
   const clear = button(document, "clear-site", "Clear site data");
   const confirm = document.createElement("p");
   confirm.textContent =
@@ -638,12 +616,11 @@ function findOrCreatePanel(
   live.className = "live";
   live.setAttribute("role", "status");
   live.setAttribute("aria-live", "polite");
-  content.append(reference, visibility, file, controls, clear, confirm, live);
+  content.append(file, quickControls, controls, clear, confirm, live);
   panel.append(handle, content);
   root.append(style, panel);
   return {
     handle,
-    reference,
     live,
     file,
     visible,
