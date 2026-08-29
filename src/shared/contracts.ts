@@ -4,14 +4,20 @@ declare const referenceIdBrand: unique symbol;
 
 export type Origin = string & { readonly [originBrand]: "Origin" };
 export type PageKey = string & { readonly [pageKeyBrand]: "PageKey" };
-export type ReferenceId = string & { readonly [referenceIdBrand]: "ReferenceId" };
+export type ReferenceId = string & {
+  readonly [referenceIdBrand]: "ReferenceId";
+};
 
 export type Result<T, E> =
   | Readonly<{ ok: true; value: T }>
   | Readonly<{ ok: false; error: E }>;
 
 export type InteractionMode = "click-through" | "drag";
-export type MimeType = "image/png" | "image/jpeg" | "image/webp" | "image/svg+xml";
+export type MimeType =
+  | "image/png"
+  | "image/jpeg"
+  | "image/webp"
+  | "image/svg+xml";
 
 export type Placement = Readonly<{ x: number; y: number }>;
 /** Viewport-relative top-left position for the future in-page control panel. */
@@ -58,7 +64,10 @@ export type SnapshotWithReference = OverlaySnapshot &
   Readonly<{ reference: ReferenceMetadata }>;
 
 export type Hydration =
-  | Readonly<{ snapshot: OverlaySnapshot & Readonly<{ reference: null }>; reference: null }>
+  | Readonly<{
+      snapshot: OverlaySnapshot & Readonly<{ reference: null }>;
+      reference: null;
+    }>
   | Readonly<{ snapshot: SnapshotWithReference; reference: ImportedReference }>;
 
 export type OriginRecordV1 = Readonly<{
@@ -129,7 +138,11 @@ export type ContentPanelRequest =
       requestId: string;
       reference: ImportedReference;
     }>
-  | Readonly<{ kind: "update-settings"; requestId: string; patch: SettingsPatch }>
+  | Readonly<{
+      kind: "update-settings";
+      requestId: string;
+      patch: SettingsPatch;
+    }>
   | Readonly<{ kind: "clear-site"; requestId: string }>
   | Readonly<{
       kind: "update-panel-position";
@@ -140,8 +153,18 @@ export type ContentPanelRequest =
 export type PopupRequest =
   | Readonly<{ kind: "get-tab-state"; requestId: string }>
   | Readonly<{ kind: "register-site"; requestId: string; url: string }>
-  | Readonly<{ kind: "replace-reference"; requestId: string; url: string; reference: ImportedReference }>
-  | Readonly<{ kind: "update-settings"; requestId: string; url: string; patch: SettingsPatch }>
+  | Readonly<{
+      kind: "replace-reference";
+      requestId: string;
+      url: string;
+      reference: ImportedReference;
+    }>
+  | Readonly<{
+      kind: "update-settings";
+      requestId: string;
+      url: string;
+      patch: SettingsPatch;
+    }>
   | Readonly<{ kind: "clear-site"; requestId: string; url: string }>;
 
 export type RenderDiagnostic = Readonly<{
@@ -173,19 +196,26 @@ export type ContentRequest =
 export type ContentEvent =
   | Readonly<{ kind: "content-ready"; url: string }>
   | Readonly<{ kind: "placement-committed"; url: string; placement: Placement }>
-  | Readonly<{ kind: "image-load-failed"; url: string; referenceId: ReferenceId }>;
+  | Readonly<{
+      kind: "image-load-failed";
+      url: string;
+      referenceId: ReferenceId;
+    }>;
 
 export const PUBLIC_ERROR_MESSAGES = {
   "unsupported-url": "This page cannot use Pixel Pincher.",
   "site-access-denied": "Pixel Pincher needs permission for this site.",
   "site-access-revoked": "Site access was removed.",
-  "content-unavailable": "The page overlay is unavailable. Reload the page and try again.",
+  "content-unavailable":
+    "The page overlay is unavailable. Reload the page and try again.",
   "invalid-image-type": "Choose a PNG, JPEG, WebP, or SVG image.",
   "image-too-large": "The image is too large. Choose an image up to 10 MiB.",
-  "image-too-many-pixels": "The image has too many pixels. Choose an image with at most 40 million pixels.",
+  "image-too-many-pixels":
+    "The image has too many pixels. Choose an image with at most 40 million pixels.",
   "image-decode-failed": "Pixel Pincher could not decode that image.",
   "invalid-request": "Pixel Pincher received an invalid request.",
-  "invalid-stored-data": "Stored Pixel Pincher data is invalid. Clear this site's data and try again.",
+  "invalid-stored-data":
+    "Stored Pixel Pincher data is invalid. Clear this site's data and try again.",
   "storage-failed": "Pixel Pincher could not save this change.",
   "image-render-failed": "Pixel Pincher could not render the reference image.",
 } as const;
@@ -193,7 +223,9 @@ export const PUBLIC_ERROR_MESSAGES = {
 export type PublicErrorCode = keyof typeof PUBLIC_ERROR_MESSAGES;
 export type PublicError = Readonly<{ code: PublicErrorCode; message: string }>;
 
-export class AppError<Code extends PublicErrorCode = PublicErrorCode> extends Error {
+export class AppError<
+  Code extends PublicErrorCode = PublicErrorCode,
+> extends Error {
   readonly code: Code;
 
   constructor(code: Code, options?: Readonly<{ cause?: unknown }>) {
@@ -219,7 +251,9 @@ export type StorageFailedError = ErrorFor<"storage-failed">;
 export type ImageRenderFailedError = ErrorFor<"image-render-failed">;
 
 export type ValidationError = ErrorFor<"unsupported-url" | "invalid-request">;
-export type RepositoryError = ErrorFor<"invalid-stored-data" | "storage-failed">;
+export type RepositoryError = ErrorFor<
+  "invalid-stored-data" | "storage-failed"
+>;
 export type AccessError = ErrorFor<
   "site-access-denied" | "site-access-revoked" | "content-unavailable"
 >;
@@ -274,7 +308,11 @@ export const MAX_PANEL_POSITION = 1_000_000;
 function deepFreeze<T extends object>(value: T): T {
   Object.freeze(value);
   for (const child of Object.values(value)) {
-    if (typeof child === "object" && child !== null && !Object.isFrozen(child)) {
+    if (
+      typeof child === "object" &&
+      child !== null &&
+      !Object.isFrozen(child)
+    ) {
       deepFreeze(child);
     }
   }
@@ -285,7 +323,7 @@ export const DEFAULT_ORIGIN_SETTINGS: OriginRecordV1["settings"] = deepFreeze({
   visible: true,
   opacity: 0.5,
   inverted: false,
-  sizing: { kind: "fit-width", lastScalePercent: 100 },
+  sizing: { kind: "scale", percent: 100 },
   interactionMode: "click-through",
 });
 

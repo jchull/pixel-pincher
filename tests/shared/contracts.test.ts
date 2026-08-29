@@ -25,14 +25,14 @@ describe("shared contracts", () => {
       opacity: 0.5,
       inverted: false,
       placement: { x: 0, y: 0 },
-      sizing: { kind: "fit-width", lastScalePercent: 100 },
+      sizing: { kind: "scale", percent: 100 },
       interactionMode: "click-through",
     });
     expect(DEFAULT_ORIGIN_SETTINGS).toEqual({
       visible: true,
       opacity: 0.5,
       inverted: false,
-      sizing: { kind: "fit-width", lastScalePercent: 100 },
+      sizing: { kind: "scale", percent: 100 },
       interactionMode: "click-through",
     });
     expect(Object.isFrozen(DEFAULT_SETTINGS)).toBe(true);
@@ -45,9 +45,18 @@ describe("shared contracts", () => {
 
   it("maps all stable public errors to user-safe messages", () => {
     const codes = [
-      "unsupported-url", "site-access-denied", "site-access-revoked", "content-unavailable",
-      "invalid-image-type", "image-too-large", "image-too-many-pixels", "image-decode-failed",
-      "invalid-request", "invalid-stored-data", "storage-failed", "image-render-failed",
+      "unsupported-url",
+      "site-access-denied",
+      "site-access-revoked",
+      "content-unavailable",
+      "invalid-image-type",
+      "image-too-large",
+      "image-too-many-pixels",
+      "image-decode-failed",
+      "invalid-request",
+      "invalid-stored-data",
+      "storage-failed",
+      "image-render-failed",
     ] satisfies readonly (keyof typeof PUBLIC_ERROR_MESSAGES)[];
     expect(codes).toHaveLength(12);
     for (const code of codes) {
@@ -62,7 +71,9 @@ describe("shared contracts", () => {
       validation: new AppError("invalid-request") satisfies ValidationError,
       repository: new AppError("storage-failed") satisfies RepositoryError,
       access: new AppError("site-access-denied") satisfies AccessError,
-      accessUnavailable: new AppError("content-unavailable") satisfies AccessError,
+      accessUnavailable: new AppError(
+        "content-unavailable",
+      ) satisfies AccessError,
       delivery: new AppError("content-unavailable") satisfies DeliveryError,
       import: new AppError("image-too-large") satisfies ImportError,
       render: new AppError("image-render-failed") satisfies RenderError,
@@ -81,9 +92,18 @@ describe("shared contracts", () => {
 
   it("strips internal causes from every AppError category", () => {
     const codes = [
-      "unsupported-url", "site-access-denied", "site-access-revoked", "content-unavailable",
-      "invalid-image-type", "image-too-large", "image-too-many-pixels", "image-decode-failed",
-      "invalid-request", "invalid-stored-data", "storage-failed", "image-render-failed",
+      "unsupported-url",
+      "site-access-denied",
+      "site-access-revoked",
+      "content-unavailable",
+      "invalid-image-type",
+      "image-too-large",
+      "image-too-many-pixels",
+      "image-decode-failed",
+      "invalid-request",
+      "invalid-stored-data",
+      "storage-failed",
+      "image-render-failed",
     ] satisfies readonly (keyof typeof PUBLIC_ERROR_MESSAGES)[];
     expect(codes).toHaveLength(12);
     for (const code of codes) {

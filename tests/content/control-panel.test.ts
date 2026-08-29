@@ -134,6 +134,11 @@ describe("ControlPanel", () => {
     ).toBe("polite");
     expect(buttons.some((button) => button.id.startsWith("move-"))).toBe(false);
     expect(buttons.some((button) => button.id === "reset-scale")).toBe(false);
+    const dragToggle = elements.find((element) => element.id === "interaction-drag");
+    if (!(dragToggle instanceof HTMLInputElement))
+      throw new Error("Expected drag toggle.");
+    expect(dragToggle.type).toBe("checkbox");
+    expect(elements.some((element) => element.id === "interaction-click-through")).toBe(false);
   });
 
   it("moves only from its dedicated handle, persists on pointer-up and lost capture, and cancels on Escape", () => {

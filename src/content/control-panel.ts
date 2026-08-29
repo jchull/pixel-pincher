@@ -69,7 +69,6 @@ type PanelElements = Readonly<{
   scale: HTMLInputElement;
   scaleNumber: HTMLInputElement;
   inverted: HTMLInputElement;
-  clickThrough: HTMLInputElement;
   drag: HTMLInputElement;
   x: HTMLInputElement;
   y: HTMLInputElement;
@@ -119,7 +118,6 @@ export class ControlPanel {
     e.scaleNumber.addEventListener("input", this.#handleScaleNumber);
     e.scaleNumber.addEventListener("keydown", this.#handleNumberKey);
     e.inverted.addEventListener("change", this.#handleInversion);
-    e.clickThrough.addEventListener("change", this.#handleInteraction);
     e.drag.addEventListener("change", this.#handleInteraction);
     e.x.addEventListener("blur", this.#handlePlacement);
     e.y.addEventListener("blur", this.#handlePlacement);
@@ -192,7 +190,6 @@ export class ControlPanel {
     e.scale.disabled = disabled || settings.sizing.kind === "fit-width";
     e.scaleNumber.disabled = disabled || settings.sizing.kind === "fit-width";
     e.inverted.checked = settings.inverted;
-    e.clickThrough.checked = settings.interactionMode === "click-through";
     e.drag.checked = settings.interactionMode === "drag";
     e.x.value = String(settings.placement.x);
     e.y.value = String(settings.placement.y);
@@ -201,7 +198,6 @@ export class ControlPanel {
       e.opacity,
       e.fitWidth,
       e.inverted,
-      e.clickThrough,
       e.drag,
       e.x,
       e.y,
@@ -310,14 +306,11 @@ export class ControlPanel {
       kind: "inversion",
       inverted: this.#elements.inverted.checked,
     });
-  #handleInteraction = (event: Event): void => {
-    const input = event.currentTarget;
-    if (input instanceof HTMLInputElement && input.checked)
-      this.#queueSetting({
-        kind: "interaction-mode",
-        interactionMode: input.value === "drag" ? "drag" : "click-through",
-      });
-  };
+  #handleInteraction = (): void =>
+    this.#queueSetting({
+      kind: "interaction-mode",
+      interactionMode: this.#elements.drag.checked ? "drag" : "click-through",
+    });
   #handlePlacement = (event: Event): void => {
     const input = event.currentTarget;
     if (input instanceof HTMLInputElement) this.#commitNumber(input);
@@ -609,20 +602,7 @@ function findOrCreatePanel(
     MAX_SCALE_PERCENT,
   );
   const inverted = checkbox(document, "inverted", "Invert colors");
-  const clickThrough = radio(
-    document,
-    "interaction-click-through",
-    "interaction",
-    "click-through",
-    "Click-through",
-  );
-  const drag = radio(
-    document,
-    "interaction-drag",
-    "interaction",
-    "drag",
-    "Drag overlay",
-  );
+  const drag = checkbox(document, "interaction-drag", "Drag overlay");
   const x = number(document, "x", MIN_PLACEMENT, MAX_PLACEMENT);
   const y = number(document, "y", MIN_PLACEMENT, MAX_PLACEMENT);
   appendLabeled(controls, "Opacity", opacity, opacityOutput);
@@ -633,7 +613,6 @@ function findOrCreatePanel(
     visible.parentElement!,
     fitWidth.parentElement!,
     inverted.parentElement!,
-    clickThrough.parentElement!,
     drag.parentElement!,
   );
   const clear = button(document, "clear-site", "Clear site data");
@@ -660,7 +639,6 @@ function findOrCreatePanel(
     scale,
     scaleNumber,
     inverted,
-    clickThrough,
     drag,
     x,
     y,
@@ -692,19 +670,6 @@ function checkbox(
   const wrapper = document.createElement("label");
   wrapper.textContent = label;
   wrapper.prepend(input);
-  return input;
-}
-function radio(
-  document: Document,
-  id: string,
-  name: string,
-  value: string,
-  label: string,
-): HTMLInputElement {
-  const input = checkbox(document, id, label);
-  input.type = "radio";
-  input.name = name;
-  input.value = value;
   return input;
 }
 function range(
