@@ -628,15 +628,7 @@ function findOrCreatePanel(
   live.className = "live";
   live.setAttribute("role", "status");
   live.setAttribute("aria-live", "polite");
-  content.append(
-    reference,
-    visibility,
-    file,
-    controls,
-    clear,
-    confirm,
-    live,
-  );
+  content.append(reference, visibility, file, controls, clear, confirm, live);
   panel.append(handle, content);
   root.append(style, panel);
   return {
@@ -773,6 +765,24 @@ async function decodeContentImage(
   const copy = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(copy).set(bytes);
   const blob = new Blob([copy], { type: mimeType });
+  try {
+    const decoder = new ImageDecoder({
+      data: new Uint8Array(copy),
+      type: mimeType,
+    });
+    try {
+      const { image } = await decoder.decode();
+      try {
+        return { width: image.displayWidth, height: image.displayHeight };
+      } finally {
+        image.close();
+      }
+    } finally {
+      decoder.close();
+    }
+  } catch {
+    // ImageDecoder does not support SVG in Chromium; createImageBitmap covers it.
+  }
   try {
     const bitmap = await createImageBitmap(blob);
     try {
