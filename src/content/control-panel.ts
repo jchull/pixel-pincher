@@ -729,14 +729,14 @@ function findOrCreatePanel(
   const fileDropTarget = button(
     document,
     "reference-drop-target",
-    "Drop an image, paste an image or URL, or click to choose one",
+    "Drop an image, hover and paste an image or URL, or click to choose one",
   );
   fileDropTarget.classList.add("file-drop-target");
   const referenceUrl = document.createElement("input");
   referenceUrl.id = "reference-url";
   referenceUrl.type = "url";
   referenceUrl.inputMode = "url";
-  referenceUrl.placeholder = "Paste image URL, then press Enter";
+  referenceUrl.placeholder = "Paste image URL or data URI, then press Enter";
   referenceUrl.setAttribute("autocomplete", "url");
   referenceUrl.setAttribute("aria-label", "Image URL");
   const controls = document.createElement("fieldset");
@@ -959,7 +959,8 @@ function parseImageUrl(value: string): URL | undefined {
     const url = new URL(value.trim());
     return url.protocol === "http:" ||
       url.protocol === "https:" ||
-      url.protocol === "blob:"
+      url.protocol === "blob:" ||
+      url.protocol === "data:"
       ? url
       : undefined;
   } catch {
@@ -968,6 +969,7 @@ function parseImageUrl(value: string): URL | undefined {
 }
 
 function fileNameFromUrl(url: URL): string {
+  if (url.protocol === "data:") return "pasted-image";
   const fileName = url.pathname.split("/").at(-1);
   return fileName === undefined || fileName.length === 0
     ? "pasted-image"

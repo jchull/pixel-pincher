@@ -359,8 +359,7 @@ describe("ControlPanel", () => {
       }),
     );
     const referenceUrl = byId<HTMLInputElement>("reference-url");
-    referenceUrl.value =
-      "blob:http://10.0.2.108:5173/a13a9176-a35c-4fdf-8abf-e2ed5d6d52d9";
+    referenceUrl.value = "data:image/png;base64,AQID";
     referenceUrl.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
     await vi.waitFor(() => expect(importer).toHaveBeenCalledTimes(4));
