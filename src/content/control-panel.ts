@@ -738,7 +738,9 @@ function findOrCreatePanel(
     "aria-label",
     "Drop an image, focus here and paste an image or URL, or upload an image",
   );
-  fileDropTarget.append("Drop an image, focus here and paste an image or URL, or ");
+  fileDropTarget.append(
+    "Drop an image, focus here and paste an image or URL, or ",
+  );
   const uploadImage = document.createElement("a");
   uploadImage.id = "upload-image";
   uploadImage.href = "#";
