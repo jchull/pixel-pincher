@@ -751,7 +751,7 @@ function findOrCreatePanel(
   referenceUrl.id = "reference-url";
   referenceUrl.type = "url";
   referenceUrl.inputMode = "url";
-  referenceUrl.placeholder = "Paste image URL or data URI, then press Enter";
+  referenceUrl.placeholder = "Paste image URL or data URI";
   referenceUrl.setAttribute("autocomplete", "url");
   referenceUrl.setAttribute("aria-label", "Image URL");
   const controls = document.createElement("fieldset");
