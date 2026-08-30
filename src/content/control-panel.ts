@@ -66,6 +66,7 @@ type PanelElements = Readonly<{
   live: HTMLElement;
   file: HTMLInputElement;
   fileDropTarget: HTMLButtonElement;
+  referenceUrl: HTMLInputElement;
   hide: HTMLButtonElement;
   opacity: HTMLInputElement;
   opacityNumber: HTMLInputElement;
@@ -125,6 +126,7 @@ export class ControlPanel {
     e.fileDropTarget.addEventListener("dragleave", this.#handleDragLeave);
     e.fileDropTarget.addEventListener("drop", this.#handleDrop);
     e.fileDropTarget.addEventListener("paste", this.#handlePaste);
+    e.referenceUrl.addEventListener("keydown", this.#handleUrlKey);
     e.hide.addEventListener("click", this.#handleVisibility);
     e.opacity.addEventListener("input", this.#handleOpacity);
     e.opacityNumber.addEventListener("input", this.#handleOpacityNumber);
@@ -290,6 +292,20 @@ export class ControlPanel {
     if (file !== undefined && this.#importReference !== undefined)
       void this.#importFile(file);
   }
+  #handleUrlKey = (event: KeyboardEvent): void => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const url = parseImageUrl(this.#elements.referenceUrl.value);
+    if (url === undefined) {
+      this.#showError({
+        code: "invalid-image-type",
+        message: "Paste a valid http, https, or page blob image URL.",
+      });
+      return;
+    }
+    this.#elements.referenceUrl.value = "";
+    void this.#importImageUrl(url);
+  };
 
   async #importImageUrl(url: URL): Promise<void> {
     try {
@@ -716,6 +732,13 @@ function findOrCreatePanel(
     "Drop an image, paste an image or URL, or click to choose one",
   );
   fileDropTarget.classList.add("file-drop-target");
+  const referenceUrl = document.createElement("input");
+  referenceUrl.id = "reference-url";
+  referenceUrl.type = "url";
+  referenceUrl.inputMode = "url";
+  referenceUrl.placeholder = "Paste image URL, then press Enter";
+  referenceUrl.setAttribute("autocomplete", "url");
+  referenceUrl.setAttribute("aria-label", "Image URL");
   const controls = document.createElement("fieldset");
   controls.className = "controls";
   const legend = document.createElement("legend");
@@ -754,7 +777,15 @@ function findOrCreatePanel(
   live.setAttribute("aria-live", "polite");
   const expanded = document.createElement("div");
   expanded.className = "expanded";
-  expanded.append(file, fileDropTarget, controls, clear, confirm, live);
+  expanded.append(
+    file,
+    fileDropTarget,
+    referenceUrl,
+    controls,
+    clear,
+    confirm,
+    live,
+  );
   content.append(quickControls, expanded);
   panel.append(header, content);
   root.append(style, panel);
@@ -765,6 +796,7 @@ function findOrCreatePanel(
     live,
     file,
     fileDropTarget,
+    referenceUrl,
     hide,
     opacity,
     opacityNumber,
@@ -925,7 +957,9 @@ function clampScale(value: number): number {
 function parseImageUrl(value: string): URL | undefined {
   try {
     const url = new URL(value.trim());
-    return url.protocol === "http:" || url.protocol === "https:"
+    return url.protocol === "http:" ||
+      url.protocol === "https:" ||
+      url.protocol === "blob:"
       ? url
       : undefined;
   } catch {
