@@ -50,6 +50,12 @@ describe("extension assets", () => {
     expect(css).not.toMatch(/outline:\s*(none|0)/);
   });
 
+  it("uses grab cursors only when the overlay is draggable", () => {
+    const css = readAsset("src/content/overlay.css");
+    expect(css).toMatch(/img\.drag-mode\s*\{[^}]*cursor:\s*grab/);
+    expect(css).toMatch(/img\.drag-mode:active\s*\{[^}]*cursor:\s*grabbing/);
+  });
+
   it("marks the popup busy while its loading state is rendered", () => {
     const main = readAsset("entrypoints/popup/main.ts");
     expect(main).toContain(
