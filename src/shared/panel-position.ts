@@ -111,7 +111,9 @@ export function parseOriginRecordWithPanelPosition(
     ok: true,
     value: {
       ...parsed.value,
-      ...(panelPosition === undefined ? {} : { panelPosition: panelPosition.value }),
+      ...(panelPosition === undefined
+        ? {}
+        : { panelPosition: panelPosition.value }),
       ...(placement === undefined ? {} : { placement: placement.value }),
     },
   };
