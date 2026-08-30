@@ -63,14 +63,14 @@ type PanelElements = Readonly<{
   live: HTMLElement;
   file: HTMLInputElement;
   fileDropTarget: HTMLButtonElement;
-  hide: HTMLInputElement;
+  hide: HTMLButtonElement;
   opacity: HTMLInputElement;
   opacityNumber: HTMLInputElement;
   fitWidth: HTMLInputElement;
   scale: HTMLInputElement;
   scaleNumber: HTMLInputElement;
   inverted: HTMLInputElement;
-  lock: HTMLInputElement;
+  lock: HTMLButtonElement;
   x: HTMLInputElement;
   y: HTMLInputElement;
   clear: HTMLButtonElement;
@@ -120,7 +120,7 @@ export class ControlPanel {
     e.fileDropTarget.addEventListener("dragleave", this.#handleDragLeave);
     e.fileDropTarget.addEventListener("drop", this.#handleDrop);
     e.fileDropTarget.addEventListener("paste", this.#handlePaste);
-    e.hide.addEventListener("change", this.#handleVisibility);
+    e.hide.addEventListener("click", this.#handleVisibility);
     e.opacity.addEventListener("input", this.#handleOpacity);
     e.opacityNumber.addEventListener("input", this.#handleOpacityNumber);
     e.opacityNumber.addEventListener("keydown", this.#handleNumberKey);
@@ -129,7 +129,7 @@ export class ControlPanel {
     e.scaleNumber.addEventListener("input", this.#handleScaleNumber);
     e.scaleNumber.addEventListener("keydown", this.#handleNumberKey);
     e.inverted.addEventListener("change", this.#handleInversion);
-    e.lock.addEventListener("change", this.#handleInteraction);
+    e.lock.addEventListener("click", this.#handleInteraction);
     e.x.addEventListener("blur", this.#handlePlacement);
     e.y.addEventListener("blur", this.#handlePlacement);
     e.x.addEventListener("keydown", this.#handleNumberKey);
@@ -186,7 +186,7 @@ export class ControlPanel {
     );
     e.collapse.textContent = this.#collapsed ? "▸" : "▾";
     e.file.disabled = false;
-    e.hide.checked = !settings.visible;
+    setToggleState(e.hide, !settings.visible);
     e.opacity.value = String(Math.round(settings.opacity * 100));
     e.opacityNumber.value = e.opacity.value;
     e.fitWidth.checked = settings.sizing.kind === "fit-width";
@@ -196,7 +196,7 @@ export class ControlPanel {
     e.scale.disabled = disabled || settings.sizing.kind === "fit-width";
     e.scaleNumber.disabled = disabled || settings.sizing.kind === "fit-width";
     e.inverted.checked = settings.inverted;
-    e.lock.checked = settings.interactionMode === "click-through";
+    setToggleState(e.lock, settings.interactionMode === "click-through");
     e.x.value = String(settings.placement.x);
     e.y.value = String(settings.placement.y);
     for (const control of [
@@ -283,11 +283,11 @@ export class ControlPanel {
     }
   }
 
-  #handleVisibility = (): void =>
-    this.#queueSetting({
-      kind: "visibility",
-      visible: !this.#elements.hide.checked,
-    });
+  #handleVisibility = (): void => {
+    const hidden = !isTogglePressed(this.#elements.hide);
+    setToggleState(this.#elements.hide, hidden);
+    this.#queueSetting({ kind: "visibility", visible: !hidden });
+  };
   #handleOpacity = (): void => {
     const percent = clampPercent(Number(this.#elements.opacity.value));
     this.#elements.opacityNumber.value = String(percent);
@@ -340,11 +340,14 @@ export class ControlPanel {
       kind: "inversion",
       inverted: this.#elements.inverted.checked,
     });
-  #handleInteraction = (): void =>
+  #handleInteraction = (): void => {
+    const locked = !isTogglePressed(this.#elements.lock);
+    setToggleState(this.#elements.lock, locked);
     this.#queueSetting({
       kind: "interaction-mode",
-      interactionMode: this.#elements.lock.checked ? "click-through" : "drag",
+      interactionMode: locked ? "click-through" : "drag",
     });
+  };
   #handlePlacement = (event: Event): void => {
     const input = event.currentTarget;
     if (input instanceof HTMLInputElement) this.#commitNumber(input);
@@ -641,7 +644,7 @@ function findOrCreatePanel(
   const legend = document.createElement("legend");
   legend.textContent = "Overlay controls";
   controls.append(legend);
-  const hide = checkbox(document, "overlay-hide", "👁 Hide");
+  const hide = toggleButton(document, "overlay-hide", "👁 Hide");
   const opacity = range(document, "opacity", 0, 100);
   const opacityNumber = number(document, "opacity-number", 0, 100);
   const fitWidth = checkbox(document, "fit-width", "Fit to viewport width");
@@ -653,12 +656,12 @@ function findOrCreatePanel(
     MAX_SCALE_PERCENT,
   );
   const inverted = checkbox(document, "inverted", "Invert colors");
-  const lock = checkbox(document, "overlay-lock", "🔒 Lock");
+  const lock = toggleButton(document, "overlay-lock", "🔒 Lock");
   const x = number(document, "x", MIN_PLACEMENT, MAX_PLACEMENT);
   const y = number(document, "y", MIN_PLACEMENT, MAX_PLACEMENT);
   const quickControls = document.createElement("div");
   quickControls.className = "quick-controls";
-  quickControls.append(hide.parentElement!, lock.parentElement!);
+  quickControls.append(hide, lock);
   appendRangeControl(controls, "Opacity", opacity, opacityNumber);
   appendRangeControl(controls, "Scale", scale, scaleNumber);
   appendPositionControls(controls, x, y);
@@ -711,6 +714,17 @@ function button(
   element.setAttribute("aria-label", label);
   return element;
 }
+function toggleButton(
+  document: Document,
+  id: string,
+  label: string,
+): HTMLButtonElement {
+  const toggle = button(document, id, label);
+  toggle.classList.add("toggle-button");
+  toggle.setAttribute("aria-pressed", "false");
+  return toggle;
+}
+
 function checkbox(
   document: Document,
   id: string,
@@ -763,6 +777,14 @@ function appendLabeled(
   if (extra !== undefined) wrapper.append(extra);
   parent.append(wrapper);
 }
+function isTogglePressed(toggle: HTMLButtonElement): boolean {
+  return toggle.getAttribute("aria-pressed") === "true";
+}
+
+function setToggleState(toggle: HTMLButtonElement, pressed: boolean): void {
+  toggle.setAttribute("aria-pressed", String(pressed));
+}
+
 function appendPositionControls(
   parent: HTMLElement,
   x: HTMLInputElement,

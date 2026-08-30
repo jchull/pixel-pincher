@@ -135,17 +135,15 @@ describe("ControlPanel", () => {
     const hideToggle = elements.find(
       (element) => element.id === "overlay-hide",
     );
-    if (!(hideToggle instanceof HTMLInputElement))
+    if (!(hideToggle instanceof HTMLButtonElement))
       throw new Error("Expected overlay hide toggle.");
-    expect(hideToggle.type).toBe("checkbox");
-    expect(hideToggle.checked).toBe(false);
+    expect(hideToggle.getAttribute("aria-pressed")).toBe("false");
     const lockToggle = elements.find(
       (element) => element.id === "overlay-lock",
     );
-    if (!(lockToggle instanceof HTMLInputElement))
+    if (!(lockToggle instanceof HTMLButtonElement))
       throw new Error("Expected overlay lock toggle.");
-    expect(lockToggle.type).toBe("checkbox");
-    expect(lockToggle.checked).toBe(true);
+    expect(lockToggle.getAttribute("aria-pressed")).toBe("true");
     expect(
       elements.some((element) => element.classList.contains("position-inputs")),
     ).toBe(true);
@@ -306,10 +304,10 @@ describe("ControlPanel", () => {
         }),
       ),
     );
-    byId<HTMLInputElement>("overlay-hide").click();
+    byId<HTMLButtonElement>("overlay-hide").click();
     byId<HTMLInputElement>("fit-width").click();
     byId<HTMLInputElement>("inverted").click();
-    byId<HTMLInputElement>("overlay-lock").click();
+    byId<HTMLButtonElement>("overlay-lock").click();
     const x = byId<HTMLInputElement>("x");
     x.value = "12";
     x.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
@@ -348,8 +346,8 @@ describe("ControlPanel", () => {
     const hideOverlay = elements.find(
       (element) => element.id === "overlay-hide",
     );
-    if (!(hideOverlay instanceof HTMLInputElement))
-      throw new Error("Expected overlay hide checkbox.");
-    expect(hideOverlay.checked).toBe(true);
+    if (!(hideOverlay instanceof HTMLButtonElement))
+      throw new Error("Expected overlay hide toggle.");
+    expect(hideOverlay.getAttribute("aria-pressed")).toBe("true");
   });
 });
