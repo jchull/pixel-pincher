@@ -130,6 +130,7 @@ describe("OverlayController", () => {
     const host = document.querySelector<HTMLElement>("#pixel-pincher-overlay");
     expect(host?.style.cssText).toContain("top: 0px");
     expect(host?.style.cssText).toContain("left: 0px");
+    expect(host?.style.zIndex).toBe("2147483646");
     expect(
       document.querySelector("#pixel-pincher-overlay")?.shadowRoot,
     ).toBeNull();

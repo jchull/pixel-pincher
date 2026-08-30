@@ -317,7 +317,7 @@ function findOrCreateHost(document: Document): HTMLElement {
     position: "fixed",
     top: "0",
     left: "0",
-    zIndex: "2147483647",
+    zIndex: "2147483646",
     width: "0",
     height: "0",
     margin: "0",
