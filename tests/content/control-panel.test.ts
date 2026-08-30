@@ -132,7 +132,9 @@ describe("ControlPanel", () => {
     ).toBe("polite");
     expect(buttons.some((button) => button.id.startsWith("move-"))).toBe(false);
     expect(buttons.some((button) => button.id === "reset-scale")).toBe(false);
-    const hideToggle = elements.find((element) => element.id === "overlay-hide");
+    const hideToggle = elements.find(
+      (element) => element.id === "overlay-hide",
+    );
     if (!(hideToggle instanceof HTMLInputElement))
       throw new Error("Expected overlay hide toggle.");
     expect(hideToggle.type).toBe("checkbox");
@@ -147,6 +149,14 @@ describe("ControlPanel", () => {
     expect(
       elements.some((element) => element.classList.contains("position-inputs")),
     ).toBe(true);
+    const collapse = buttons.find((button) => button.id === "collapse-panel");
+    if (collapse === undefined) throw new Error("Expected collapse button.");
+    expect(collapse.getAttribute("aria-expanded")).toBe("true");
+    collapse.click();
+    expect(collapse.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      elements.find((element) => element.classList.contains("panel"))?.classList,
+    ).toContain("collapsed");
   });
 
   it("moves only from its dedicated handle, persists on pointer-up and lost capture, and cancels on Escape", () => {

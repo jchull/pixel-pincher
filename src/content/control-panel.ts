@@ -59,6 +59,7 @@ type PendingSetting = Readonly<{ patch: SettingsPatch; coalesce: boolean }>;
 
 type PanelElements = Readonly<{
   handle: HTMLButtonElement;
+  collapse: HTMLButtonElement;
   live: HTMLElement;
   file: HTMLInputElement;
   fileDropTarget: HTMLButtonElement;
@@ -92,6 +93,7 @@ export class ControlPanel {
   #settingsInFlight = false;
   #pendingSettings: PendingSetting[] = [];
   #confirmingClear = false;
+  #collapsed = false;
 
   constructor(options: ControlPanelOptions) {
     this.#window = options.window;
@@ -110,6 +112,7 @@ export class ControlPanel {
       this.#handleLostPointerCapture,
     );
     e.handle.addEventListener("dragstart", preventDefault);
+    e.collapse.addEventListener("click", this.#toggleCollapsed);
     e.file.addEventListener("change", this.#handleFile);
     e.fileDropTarget.addEventListener("click", this.#openFilePicker);
     e.fileDropTarget.addEventListener("dragenter", this.#handleDragEnter);
@@ -174,6 +177,14 @@ export class ControlPanel {
     this.#host.style.top = `${this.#position.y}px`;
     const settings = snapshot.settings;
     const disabled = snapshot.reference === null;
+    const panel = this.#elements.collapse.parentElement?.parentElement;
+    panel?.classList.toggle("collapsed", this.#collapsed);
+    e.collapse.setAttribute("aria-expanded", String(!this.#collapsed));
+    e.collapse.setAttribute(
+      "aria-label",
+      this.#collapsed ? "Expand control panel" : "Collapse control panel",
+    );
+    e.collapse.textContent = this.#collapsed ? "▸" : "▾";
     e.file.disabled = false;
     e.hide.checked = !settings.visible;
     e.opacity.value = String(Math.round(settings.opacity * 100));
@@ -206,6 +217,10 @@ export class ControlPanel {
       : "Clear site data";
   }
 
+  #toggleCollapsed = (): void => {
+    this.#collapsed = !this.#collapsed;
+    this.#render();
+  };
   #openFilePicker = (): void => this.#elements.file.click();
   #handleFile = (): void => this.#importFirstFile(this.#elements.file.files);
   #handleDragEnter = (event: DragEvent): void => {
@@ -596,9 +611,14 @@ function findOrCreatePanel(
   const panel = document.createElement("section");
   panel.className = "panel";
   panel.setAttribute("aria-label", "Pixel Pincher control panel");
+  const header = document.createElement("div");
+  header.className = "header";
   const handle = button(document, "handle", "Drag control panel");
   handle.innerHTML =
     '<span>Pixel Pincher</span><span class="grip" aria-hidden="true">⠿</span>';
+  const collapse = button(document, "collapse-panel", "Collapse control panel");
+  collapse.className = "collapse";
+  header.append(handle, collapse);
   const content = document.createElement("div");
   content.className = "content";
   const file = document.createElement("input");
@@ -648,19 +668,15 @@ function findOrCreatePanel(
   live.className = "live";
   live.setAttribute("role", "status");
   live.setAttribute("aria-live", "polite");
-  content.append(
-    file,
-    fileDropTarget,
-    quickControls,
-    controls,
-    clear,
-    confirm,
-    live,
-  );
-  panel.append(handle, content);
+  const expanded = document.createElement("div");
+  expanded.className = "expanded";
+  expanded.append(file, fileDropTarget, controls, clear, confirm, live);
+  content.append(quickControls, expanded);
+  panel.append(header, content);
   root.append(style, panel);
   return {
     handle,
+    collapse,
     live,
     file,
     fileDropTarget,
