@@ -155,7 +155,8 @@ describe("ControlPanel", () => {
     collapse.click();
     expect(collapse.getAttribute("aria-expanded")).toBe("false");
     expect(
-      elements.find((element) => element.classList.contains("panel"))?.classList,
+      elements.find((element) => element.classList.contains("panel"))
+        ?.classList,
     ).toContain("collapsed");
   });
 
@@ -171,6 +172,7 @@ describe("ControlPanel", () => {
     dragHandle.dispatchEvent(
       pointer("pointerdown", { pointerId: 1, clientX: 10, clientY: 10 }),
     );
+    expect(dragHandle.classList).toContain("dragging");
     dragHandle.dispatchEvent(
       pointer("pointermove", { pointerId: 1, clientX: 60, clientY: 40 }),
     );
@@ -178,6 +180,7 @@ describe("ControlPanel", () => {
       pointer("pointerup", { pointerId: 1, clientX: 60, clientY: 40 }),
     );
     expect(commits).toHaveBeenLastCalledWith({ x: 70, y: 60 });
+    expect(dragHandle.classList).not.toContain("dragging");
 
     dragHandle.dispatchEvent(
       pointer("pointerdown", { pointerId: 2, clientX: 0, clientY: 0 }),

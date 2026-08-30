@@ -484,6 +484,7 @@ export class ControlPanel {
       position: this.#position,
     };
     this.#elements.handle.setPointerCapture(event.pointerId);
+    this.#elements.handle.classList.add("dragging");
     event.preventDefault();
   };
   #handlePointerMove = (event: PointerEvent): void => {
@@ -523,6 +524,7 @@ export class ControlPanel {
   };
   #commitDrag(pointerId: number): void {
     this.#dragState = undefined;
+    this.#elements.handle.classList.remove("dragging");
     if (this.#elements.handle.hasPointerCapture(pointerId))
       this.#elements.handle.releasePointerCapture(pointerId);
     this.#commitPosition();
@@ -531,6 +533,7 @@ export class ControlPanel {
     const drag = this.#dragState;
     if (drag === undefined) return;
     this.#dragState = undefined;
+    this.#elements.handle.classList.remove("dragging");
     this.#position = drag.position;
     if (this.#elements.handle.hasPointerCapture(drag.pointerId))
       this.#elements.handle.releasePointerCapture(drag.pointerId);
@@ -540,6 +543,7 @@ export class ControlPanel {
   #cancelDrag(): void {
     const drag = this.#dragState;
     this.#dragState = undefined;
+    this.#elements.handle.classList.remove("dragging");
     if (
       drag !== undefined &&
       this.#elements.handle.hasPointerCapture(drag.pointerId)
