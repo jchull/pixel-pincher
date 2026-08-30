@@ -259,15 +259,44 @@ export class ControlPanel {
     this.#importFirstFile(event.dataTransfer?.files ?? null);
   };
   #handlePaste = (event: ClipboardEvent): void => {
-    const files = event.clipboardData?.files ?? null;
-    if (files === null || files.length === 0) return;
+    const clipboard = event.clipboardData;
+    const files = clipboard?.files ?? null;
+    if (files !== null && files.length > 0) {
+      event.preventDefault();
+      this.#importFirstFile(files);
+      return;
+    }
+    const url = parseImageUrl(clipboard?.getData("text/plain") ?? "");
+    if (url === undefined) return;
     event.preventDefault();
-    this.#importFirstFile(files);
+    void this.#importImageUrl(url);
   };
   #importFirstFile(files: FileList | null): void {
     const file = files?.[0];
     if (file !== undefined && this.#importReference !== undefined)
       void this.#importFile(file);
+  }
+
+  async #importImageUrl(url: URL): Promise<void> {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Image request failed: ${response.status}`);
+      const mimeType = response.headers.get("content-type")?.split(";", 1)[0]?.trim() ?? "";
+      const bytes = await response.arrayBuffer();
+      await this.#importFile(
+        new File([bytes], fileNameFromUrl(url), { type: mimeType }),
+      );
+    } catch (error) {
+      console.error("[Pixel Pincher] Could not load a pasted image URL.", {
+        error,
+        url: url.toString(),
+      });
+      this.#showError({
+        code: "image-decode-failed",
+        message:
+          "Pixel Pincher could not load that image URL. It must be a publicly accessible image.",
+      });
+    }
   }
 
   async #importFile(file: File): Promise<void> {
@@ -668,7 +697,7 @@ function findOrCreatePanel(
   const fileDropTarget = button(
     document,
     "reference-drop-target",
-    "Drop or paste an image, or click to choose one",
+    "Drop an image, paste an image or URL, or click to choose one",
   );
   fileDropTarget.classList.add("file-drop-target");
   const controls = document.createElement("fieldset");
@@ -877,6 +906,22 @@ function clampScale(value: number): number {
     Math.max(MIN_SCALE_PERCENT, Math.round(value)),
   );
 }
+function parseImageUrl(value: string): URL | undefined {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "http:" || url.protocol === "https:" ? url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function fileNameFromUrl(url: URL): string {
+  const fileName = url.pathname.split("/").at(-1);
+  return fileName === undefined || fileName.length === 0
+    ? "pasted-image"
+    : fileName;
+}
+
 function clampPercent(value: number): number {
   return Math.min(100, Math.max(0, Math.round(value)));
 }
