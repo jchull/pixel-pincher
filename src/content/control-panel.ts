@@ -95,6 +95,7 @@ export class ControlPanel {
   #pendingSettings: PendingSetting[] = [];
   #confirmingClear = false;
   #collapsed = false;
+  #referenceDataUrl: string | undefined;
 
   constructor(options: ControlPanelOptions) {
     this.#window = options.window;
@@ -143,6 +144,7 @@ export class ControlPanel {
   }
 
   hydrate(hydration: Hydration): void {
+    this.#referenceDataUrl = hydration.reference?.dataUrl;
     this.apply(hydration.snapshot);
   }
 
@@ -151,6 +153,7 @@ export class ControlPanel {
     this.#revision = snapshot.revision;
     this.#cancelDrag();
     this.#snapshot = snapshot;
+    if (snapshot.reference === null) this.#referenceDataUrl = undefined;
     this.#position = this.#clamp(snapshot.panelPosition ?? this.#position);
     this.#render();
   }
@@ -160,6 +163,7 @@ export class ControlPanel {
     this.#revision = revision;
     this.#cancelDrag();
     this.#snapshot = undefined;
+    this.#referenceDataUrl = undefined;
     this.#host.style.display = "none";
   }
 
@@ -188,6 +192,12 @@ export class ControlPanel {
     );
     e.collapse.textContent = this.#collapsed ? "▸" : "▾";
     e.file.disabled = false;
+    e.fileDropTarget.style.setProperty(
+      "--reference-image",
+      this.#referenceDataUrl === undefined
+        ? "none"
+        : `url("${this.#referenceDataUrl}")`,
+    );
     setToggleState(e.hide, !settings.visible);
     e.opacity.value = String(Math.round(settings.opacity * 100));
     e.opacityNumber.value = e.opacity.value;
@@ -276,6 +286,8 @@ export class ControlPanel {
         });
         return;
       }
+      this.#referenceDataUrl = imported.value.dataUrl;
+      this.#render();
       await this.#send({
         kind: "replace-reference",
         reference: imported.value,
@@ -632,7 +644,11 @@ function findOrCreatePanel(
   panel.setAttribute("aria-label", "Pixel Pincher control panel");
   const header = document.createElement("div");
   header.className = "header";
-  const close = button(document, "close-panel", "Hide overlay and control panel");
+  const close = button(
+    document,
+    "close-panel",
+    "Hide overlay and control panel",
+  );
   close.className = "close";
   close.textContent = "×";
   const handle = button(document, "handle", "Drag control panel");

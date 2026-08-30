@@ -258,6 +258,9 @@ describe("ControlPanel", () => {
         reference: imported,
       }),
     );
+    expect(dropTarget.style.getPropertyValue("--reference-image")).toBe(
+      `url("${dataUrl}")`,
+    );
     const opacity = byId<HTMLInputElement>("opacity");
     opacity.value = "30";
     opacity.dispatchEvent(new Event("input"));

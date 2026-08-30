@@ -122,12 +122,29 @@ input:focus-visible {
 }
 
 .file-drop-target {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   min-height: 72px;
   border: 1px dashed rgb(148 163 184 / 55%);
   background: rgb(15 23 42 / 48%);
-  color: #cbd5e1;
+  color: #f8fafc;
   line-height: 1.45;
   text-align: center;
+  text-shadow:
+    -1px -1px 1px rgb(2 6 23 / 90%),
+    1px -1px 1px rgb(2 6 23 / 90%),
+    -1px 1px 1px rgb(2 6 23 / 90%),
+    1px 1px 1px rgb(2 6 23 / 90%);
+}
+
+.file-drop-target::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: var(--reference-image, none) center / cover no-repeat;
+  content: "";
+  opacity: 0.5;
 }
 
 .file-drop-target:hover,
