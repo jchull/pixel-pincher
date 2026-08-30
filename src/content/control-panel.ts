@@ -198,7 +198,7 @@ export class ControlPanel {
         ? "none"
         : `url("${this.#referenceDataUrl}")`,
     );
-    setToggleState(e.hide, !settings.visible);
+    setHideToggleState(e.hide, !settings.visible);
     e.opacity.value = String(Math.round(settings.opacity * 100));
     e.opacityNumber.value = e.opacity.value;
     e.fitWidth.checked = settings.sizing.kind === "fit-width";
@@ -208,7 +208,7 @@ export class ControlPanel {
     e.scale.disabled = disabled || settings.sizing.kind === "fit-width";
     e.scaleNumber.disabled = disabled || settings.sizing.kind === "fit-width";
     e.inverted.checked = settings.inverted;
-    setToggleState(e.lock, settings.interactionMode === "click-through");
+    setLockToggleState(e.lock, settings.interactionMode === "click-through");
     e.x.value = String(settings.placement.x);
     e.y.value = String(settings.placement.y);
     for (const control of [
@@ -309,7 +309,7 @@ export class ControlPanel {
 
   #handleVisibility = (): void => {
     const hidden = !isTogglePressed(this.#elements.hide);
-    setToggleState(this.#elements.hide, hidden);
+    setHideToggleState(this.#elements.hide, hidden);
     this.#queueSetting({ kind: "visibility", visible: !hidden });
   };
   #handleOpacity = (): void => {
@@ -366,7 +366,7 @@ export class ControlPanel {
     });
   #handleInteraction = (): void => {
     const locked = !isTogglePressed(this.#elements.lock);
-    setToggleState(this.#elements.lock, locked);
+    setLockToggleState(this.#elements.lock, locked);
     this.#queueSetting({
       kind: "interaction-mode",
       interactionMode: locked ? "click-through" : "drag",
@@ -815,6 +815,16 @@ function isTogglePressed(toggle: HTMLButtonElement): boolean {
 
 function setToggleState(toggle: HTMLButtonElement, pressed: boolean): void {
   toggle.setAttribute("aria-pressed", String(pressed));
+}
+
+function setHideToggleState(toggle: HTMLButtonElement, hidden: boolean): void {
+  setToggleState(toggle, hidden);
+  toggle.textContent = hidden ? "👁 Show" : "🙈 Hide";
+}
+
+function setLockToggleState(toggle: HTMLButtonElement, locked: boolean): void {
+  setToggleState(toggle, locked);
+  toggle.textContent = locked ? "🔓 Unlock" : "🔒 Lock";
 }
 
 function appendPositionControls(
