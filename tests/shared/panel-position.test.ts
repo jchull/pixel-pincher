@@ -44,11 +44,21 @@ describe("panel position boundaries", () => {
     expect(parsePanelPosition({ x: 0, y: 0, extra: true }).ok).toBe(false);
   });
 
-  it("parses legacy V1 origin records and optional panel positions without widening their schemas", () => {
+  it("parses legacy V1 origin records and optional site positions", () => {
     expect(parseOriginRecordWithPanelPosition(originRecord)).toEqual({ ok: true, value: originRecord });
-    expect(parseOriginRecordWithPanelPosition({ ...originRecord, panelPosition: { x: 12, y: 34 } })).toEqual({
+    expect(
+      parseOriginRecordWithPanelPosition({
+        ...originRecord,
+        placement: { x: 12, y: 34 },
+        panelPosition: { x: 12, y: 34 },
+      }),
+    ).toEqual({
       ok: true,
-      value: { ...originRecord, panelPosition: { x: 12, y: 34 } },
+      value: {
+        ...originRecord,
+        placement: { x: 12, y: 34 },
+        panelPosition: { x: 12, y: 34 },
+      },
     });
     expect(parseOriginRecordWithPanelPosition({ ...originRecord, panelPosition: { x: -1, y: 0 } }).ok).toBe(false);
     expect(parseOriginRecordWithPanelPosition({ ...originRecord, extra: true }).ok).toBe(false);

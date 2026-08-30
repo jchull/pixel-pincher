@@ -22,7 +22,7 @@ The Chromium release includes:
 - Reference-image color inversion.
 - Click-through and drag interaction modes.
 - Exact X and Y placement in CSS pixels.
-- Per-page placement overrides.
+- One shared placement per site origin.
 - A visibility shortcut and optional nudge commands.
 - Automatic restoration after a user grants access to a site.
 - Local-only storage. The extension never uploads a reference image.
@@ -51,11 +51,9 @@ The service worker reconciles saved site records, granted origins, and registere
 
 ### One image belongs to one origin
 
-A reference image and default controls belong to an origin such as `https://example.com`. The image is available on every HTTP or HTTPS page under that origin. Placement can vary by page URL.
+A reference image, controls, and placement belong to an origin such as `https://example.com`. The image appears at the same location on every HTTP or HTTPS page under that origin.
 
-Page identity is `<origin><pathname><search>`. Hash fragments do not create a new page because client-side anchors should keep alignment. The plan does not normalize query parameter order. Two distinct URL strings are two page keys.
-
-Clearing a reference removes the origin image and all page-placement overrides for that origin. It preserves no hidden controls or image data.
+Clearing a reference removes the origin image and its controls and placement. It preserves no hidden controls or image data.
 
 ### Placement uses document coordinates
 
@@ -451,9 +449,9 @@ Test valid and invalid message variants, extra fields, URL schemes, origin and p
 - **Depends on:** Task 1
 - **Files:** `src/background/repository.ts`, `src/background/storage-adapter.ts`, related tests
 
-Implement `OverlayRepository` over a narrow storage adapter. Keep origin, page, and image records separate. Implement replacement rollback, origin cleanup, revision increments, origin indexing, and orphan cleanup. No method that updates settings may fetch or write image data.
+Implement `OverlayRepository` over a narrow storage adapter. Keep origin and image records separate. Implement replacement rollback, origin cleanup, revision increments, origin indexing, and orphan cleanup. No method that updates settings may fetch or write image data.
 
-Test fresh state, page override precedence, reference replacement success and rollback, interrupted replacement cleanup, clear-origin cleanup, malformed data, unknown schema versions, storage failures, and monotonic revisions.
+Test fresh state, site-scoped placement, reference replacement success and rollback, interrupted replacement cleanup, clear-origin cleanup, malformed data, unknown schema versions, storage failures, and monotonic revisions.
 
 **Acceptance:** Repository tests inspect adapter calls and prove that transparency, sizing, inversion, and placement updates never touch image keys.
 
@@ -547,7 +545,7 @@ On full reload, content startup restores state. On service-worker restart, repos
 
 Test command directions, page override creation, SPA route changes, query-string changes, hash-only changes, service-worker restart, content restart, and navigation races.
 
-**Acceptance:** Reload, back and forward navigation, `history.pushState`, and a service-worker restart preserve the correct origin image and page placement.
+**Acceptance:** Reload, back and forward navigation, `history.pushState`, and a service-worker restart preserve the correct origin image and site-scoped placement.
 
 ### Task 9: Finish accessibility, visual design, and extension assets
 

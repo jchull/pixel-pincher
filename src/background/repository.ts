@@ -106,7 +106,7 @@ function snapshot(state: LoadedState): OverlaySnapshot {
   const revision = record?.revision ?? 0;
   const settings: OverlaySettings = {
     ...(record?.settings ?? DEFAULT_ORIGIN_SETTINGS),
-    placement: state.pageRecord?.placement ?? DEFAULT_SETTINGS.placement,
+    placement: record?.placement ?? DEFAULT_SETTINGS.placement,
   };
   return {
     revision,
@@ -184,17 +184,15 @@ export class OverlayRepository {
         revision,
         origin: state.origin,
         settings: originSettings(next),
+        placement: next.placement,
         reference: before.reference,
         ...(state.originRecord?.panelPosition === undefined
           ? {}
           : { panelPosition: state.originRecord.panelPosition }),
       };
-      const values: Record<string, unknown> = { [originRecordKey(state.origin)]: origin };
-      if (patch.kind === "placement") {
-        const page: PageRecordV1 = { schemaVersion: 1, revision, origin: state.origin, pageKey: state.pageKey, placement: patch.placement };
-        values[pageRecordKey(state.pageKey)] = page;
-      }
-      await this.#writeWithIndex(state.origin, values);
+      await this.#writeWithIndex(state.origin, {
+        [originRecordKey(state.origin)]: origin,
+      });
       return { revision, origin: state.origin, pageKey: state.pageKey, settings: next, reference: before.reference };
     });
   }
@@ -216,6 +214,7 @@ export class OverlayRepository {
         revision,
         origin: state.origin,
         settings: originSettings(before.settings),
+        placement: before.settings.placement,
         reference: before.reference,
         panelPosition: input.panelPosition,
       };
@@ -272,6 +271,7 @@ export class OverlayRepository {
           revision,
           origin: state.origin,
           settings: originSettings(before.settings),
+          placement: before.settings.placement,
           reference: reference.metadata,
           ...(state.originRecord?.panelPosition === undefined
             ? {}

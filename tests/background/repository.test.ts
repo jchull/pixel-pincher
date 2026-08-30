@@ -326,7 +326,7 @@ describe("OverlayRepository", () => {
     expect(independentHydration.ok && independentHydration.value.reference?.metadata.id).toBe(secondReference.metadata.id);
   });
 
-  it("clears a populated origin while preserving a different origin's page, image, and index membership", async () => {
+  it("clears a populated origin while preserving a different origin's settings, image, and index membership", async () => {
     const storage = new MemoryStorage();
     const repository = new OverlayRepository(storage);
     const firstUrl = new URL("https://first.test/page");
@@ -339,16 +339,14 @@ describe("OverlayRepository", () => {
     expect((await repository.updatePlacement({ url: secondUrl, placement: { x: 7, y: 8 } })).ok).toBe(true);
 
     const firstOrigin = deriveOrigin(firstUrl);
-    const firstPage = derivePageKey(firstUrl);
     const secondOrigin = deriveOrigin(secondUrl);
-    const secondPage = derivePageKey(secondUrl);
-    if (firstOrigin === undefined || firstPage === undefined || secondOrigin === undefined || secondPage === undefined) {
+    if (firstOrigin === undefined || secondOrigin === undefined) {
       throw new Error("Known HTTPS URLs must derive storage identities.");
     }
     expect(await repository.clearOrigin(firstOrigin)).toEqual({ ok: true, value: undefined });
-    expect(storage.values[pageRecordKey(firstPage)]).toBeUndefined();
+    expect(storage.values[originRecordKey(firstOrigin)]).toBeUndefined();
     expect(storage.values[imageRecordKey(firstReference.metadata.id)]).toBeUndefined();
-    expect(storage.values[pageRecordKey(secondPage)]).toBeDefined();
+    expect(storage.values[originRecordKey(secondOrigin)]).toBeDefined();
     expect(storage.values[imageRecordKey(secondReference.metadata.id)]).toBeDefined();
     expect(await repository.listOrigins()).toEqual({ ok: true, value: [secondOrigin] });
   });
@@ -370,18 +368,18 @@ describe("OverlayRepository", () => {
     expect(await repository.clearOrigin(origin)).toEqual({ ok: false, error: expect.objectContaining({ code: "storage-failed" }) });
   });
 
-  it("keeps page placement overrides separate for two pages under one origin", async () => {
+  it("shares placement across pages under one origin", async () => {
     const storage = new MemoryStorage();
     const repository = new OverlayRepository(storage);
     const firstPage = new URL("https://example.test/first");
     const secondPage = new URL("https://example.test/second");
     expect((await repository.updateSettings({ url: firstPage, patch: { kind: "opacity", opacity: 0.25 } })).ok).toBe(true);
     expect((await repository.updatePlacement({ url: firstPage, placement: { x: 1, y: 2 } })).ok).toBe(true);
+    const secondSnapshot = await repository.readSnapshot(secondPage);
+    expect(secondSnapshot.ok && secondSnapshot.value.settings).toMatchObject({ opacity: 0.25, placement: { x: 1, y: 2 } });
     expect((await repository.updatePlacement({ url: secondPage, placement: { x: 3, y: 4 } })).ok).toBe(true);
     const firstSnapshot = await repository.readSnapshot(firstPage);
-    const secondSnapshot = await repository.readSnapshot(secondPage);
-    expect(firstSnapshot.ok && firstSnapshot.value.settings).toMatchObject({ opacity: 0.25, placement: { x: 1, y: 2 } });
-    expect(secondSnapshot.ok && secondSnapshot.value.settings).toMatchObject({ opacity: 0.25, placement: { x: 3, y: 4 } });
+    expect(firstSnapshot.ok && firstSnapshot.value.settings).toMatchObject({ opacity: 0.25, placement: { x: 3, y: 4 } });
   });
 
   it("reports persisted duplicate image ownership and never deletes the shared image", async () => {

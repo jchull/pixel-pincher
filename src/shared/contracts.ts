@@ -75,6 +75,8 @@ export type OriginRecordV1 = Readonly<{
   revision: number;
   origin: Origin;
   settings: Omit<OverlaySettings, "placement">;
+  /** Site-scoped overlay placement. Absent only in records from older releases. */
+  placement?: Placement;
   reference: ReferenceMetadata | null;
   /** Optional so stored schema-version-1 records created before panel support remain valid. */
   panelPosition?: PanelPosition;

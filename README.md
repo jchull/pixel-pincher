@@ -10,7 +10,7 @@ Pixel Pincher is a Chromium extension for aligning a reference image with a live
 - Overlay controls for opacity, exact scale, fit-to-viewport width, inversion, and X/Y placement.
 - Live X/Y updates while the overlay is dragged.
 - **Hide/Show** and **Lock/Unlock** toggle buttons. A locked overlay is click-through; unlock it to drag the image.
-- Per-page overlay placement, keyed by origin, path, and query string.
+- Overlay placement shared across every page on the enabled site origin.
 - Keyboard commands for visibility and placement nudging.
 
 ## Install from source

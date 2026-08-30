@@ -19,6 +19,7 @@ import {
   parseImportedReference,
   parseOriginRecordV1,
   parseOverlaySnapshot,
+  parsePlacement,
   parsePublicError,
   parseSettingsPatch,
   parseTabState,
@@ -82,37 +83,37 @@ export function parsePanelPosition(
   return parsePanelPositionValue(value, "invalid-request");
 }
 
-/** Accepts both legacy V1 records and V1 records extended with an optional panel position. */
+/** Accepts V1 records extended with optional panel and site-scoped overlay positions. */
 export function parseOriginRecordWithPanelPosition(
   value: unknown,
 ): Result<OriginRecordV1, PublicError> {
-  if (!isOwnDataRecord(value) || !Object.hasOwn(value, "panelPosition")) {
-    return parseOriginRecordV1(value);
-  }
-  if (
-    !hasExactKeys(value, [
-      "schemaVersion",
-      "revision",
-      "origin",
-      "settings",
-      "reference",
-      "panelPosition",
-    ])
-  ) {
+  if (!isOwnDataRecord(value)) return parseOriginRecordV1(value);
+  const hasPanelPosition = Object.hasOwn(value, "panelPosition");
+  const hasPlacement = Object.hasOwn(value, "placement");
+  if (!hasPanelPosition && !hasPlacement) return parseOriginRecordV1(value);
+  const keys = ["schemaVersion", "revision", "origin", "settings", "reference"];
+  if (hasPanelPosition) keys.push("panelPosition");
+  if (hasPlacement) keys.push("placement");
+  if (!hasExactKeys(value, keys)) return failure("invalid-stored-data");
+  const panelPosition = hasPanelPosition
+    ? parsePanelPositionValue(value.panelPosition, "invalid-stored-data")
+    : undefined;
+  if (panelPosition !== undefined && !panelPosition.ok) return panelPosition;
+  const placement = hasPlacement ? parsePlacement(value.placement) : undefined;
+  if (placement !== undefined && !placement.ok)
     return failure("invalid-stored-data");
-  }
-  const panelPosition = parsePanelPositionValue(
-    value.panelPosition,
-    "invalid-stored-data",
-  );
-  if (!panelPosition.ok) return panelPosition;
   const legacyRecord = { ...value };
   delete legacyRecord.panelPosition;
+  delete legacyRecord.placement;
   const parsed = parseOriginRecordV1(legacyRecord);
   if (!parsed.ok) return parsed;
   return {
     ok: true,
-    value: { ...parsed.value, panelPosition: panelPosition.value },
+    value: {
+      ...parsed.value,
+      ...(panelPosition === undefined ? {} : { panelPosition: panelPosition.value }),
+      ...(placement === undefined ? {} : { placement: placement.value }),
+    },
   };
 }
 
