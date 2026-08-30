@@ -125,6 +125,10 @@ input:focus-visible {
 
 .file-drop-target {
   position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
   isolation: isolate;
   overflow: hidden;
   min-height: 72px;
