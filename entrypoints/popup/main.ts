@@ -1,10 +1,24 @@
 import { createImportReference } from "../../src/popup/import-reference";
-import { PopupController, type PopupRuntimeAdapter, type PopupState, type PopupView } from "../../src/popup/popup-controller";
-import { MAX_PLACEMENT, MIN_PLACEMENT, type TabState } from "../../src/shared/contracts";
+import {
+  PopupController,
+  type PopupRuntimeAdapter,
+  type PopupState,
+  type PopupView,
+} from "../../src/popup/popup-controller";
+import {
+  MAX_PLACEMENT,
+  MIN_PLACEMENT,
+  type TabState,
+} from "../../src/shared/contracts";
 import "./style.css";
 
 function escapeHtml(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function recovery(state: PopupState): Exclude<PopupState, { kind: "error" }> {
@@ -16,8 +30,14 @@ export function controls(tab: TabState, confirmingClear: boolean): string {
   const settings = tab.snapshot.settings;
   const disabled = reference === null ? " disabled" : "";
   const opacity = Math.round(settings.opacity * 100);
-  const manualScale = settings.sizing.kind === "fit-width" ? settings.sizing.lastScalePercent : settings.sizing.percent;
-  const diagnostic = tab.diagnostic === null ? "" : `<p class="diagnostic">${escapeHtml(tab.diagnostic.error.message)}</p>`;
+  const manualScale =
+    settings.sizing.kind === "fit-width"
+      ? settings.sizing.lastScalePercent
+      : settings.sizing.percent;
+  const diagnostic =
+    tab.diagnostic === null
+      ? ""
+      : `<p class="diagnostic">${escapeHtml(tab.diagnostic.error.message)}</p>`;
   return `
     <section aria-labelledby="reference-heading">
       <h2 id="reference-heading">Reference</h2>
@@ -53,22 +73,41 @@ export function controls(tab: TabState, confirmingClear: boolean): string {
 
 /** The only live region in the popup: status and error announcements go here. */
 function statusRegion(state: PopupState): string {
-  const message = state.kind === "error" ? `<span class="error">${escapeHtml(state.error.message)}</span>` : "";
+  const message =
+    state.kind === "error"
+      ? `<span class="error">${escapeHtml(state.error.message)}</span>`
+      : "";
   return `<div id="popup-status" role="status" aria-live="polite">${message}</div>`;
 }
 
 function markup(state: PopupState): string {
   const current = recovery(state);
   const status = statusRegion(state);
-  if (current.kind === "loading") return `<h1>Pixel Pincher</h1>${status}<p>Loading…</p>`;
-  if (current.kind === "unsupported") return `<h1>Pixel Pincher</h1>${status}<p>This page cannot use Pixel Pincher.</p>`;
+  if (current.kind === "loading")
+    return `<h1>Pixel Pincher</h1>${status}<p>Loading…</p>`;
+  if (current.kind === "unsupported")
+    return `<h1>Pixel Pincher</h1>${status}<p>This page cannot use Pixel Pincher.</p>`;
   if (current.kind === "access-required") {
-    const corruptDataClear = state.kind === "error" && state.error.code === "invalid-stored-data";
+    const corruptDataClear =
+      state.kind === "error" && state.error.code === "invalid-stored-data";
     return `<h1>Pixel Pincher</h1>${status}<p>Enable Pixel Pincher on this site to import and restore a reference.</p><button id="enable-site" type="button">Enable on this site</button>${corruptDataClear ? '<button id="clear-corrupt-site" type="button">Clear site data</button>' : ""}${state.kind === "error" ? '<button id="retry" type="button">Retry</button>' : ""}`;
   }
   // The in-page panel owns every enabled-site control. The popup remains only
   // for the user-gesture permission bootstrap until its legacy UI is removed.
   return `<h1>Pixel Pincher</h1>${status}<p>Pixel Pincher is enabled for this site. Use the in-page control panel to manage the reference and overlay.</p><button id="toggle-panel" type="button">Hide in-page controls</button>${state.kind === "error" ? '<button id="retry" type="button">Retry</button>' : ""}`;
+}
+
+async function panelIsVisible(): Promise<boolean> {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tabId = tabs[0]?.id;
+  if (tabId === undefined) return false;
+  const result = await chrome.scripting.executeScript({
+    target: { frameIds: [0], tabId },
+    func: () =>
+      document.getElementById("pixel-pincher-control-panel")?.style.display !==
+      "none",
+  });
+  return result[0]?.result === true;
 }
 
 function input(root: HTMLElement, id: string): HTMLInputElement | undefined {
@@ -79,97 +118,164 @@ function input(root: HTMLElement, id: string): HTMLInputElement | undefined {
 let selectedFile: File | undefined;
 
 function attach(root: HTMLElement, controller: PopupController): void {
-  root.querySelector("#enable-site")?.addEventListener("click", () => { void controller.enable(); });
-  root.querySelector("#retry")?.addEventListener("click", () => { void controller.retry(); });
-  root.querySelector<HTMLButtonElement>("#toggle-panel")?.addEventListener("click", async (event) => {
-    const button = event.currentTarget;
-    if (!(button instanceof HTMLButtonElement)) return;
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    const tabId = tabs[0]?.id;
-    if (tabId === undefined) return;
-    const result = await chrome.scripting.executeScript({
-      target: { frameIds: [0], tabId },
-      func: () => {
-        const panel = document.getElementById("pixel-pincher-control-panel");
-        if (panel === null) return null;
-        const visible = panel.style.display === "none";
-        panel.style.display = visible ? "block" : "none";
-        panel.setAttribute("aria-hidden", String(!visible));
-        return visible;
-      },
-    });
-    const visible = result[0]?.result;
-    if (typeof visible === "boolean") button.textContent = visible ? "Hide in-page controls" : "Show in-page controls";
+  root.querySelector("#enable-site")?.addEventListener("click", () => {
+    void controller.enable();
   });
+  root.querySelector("#retry")?.addEventListener("click", () => {
+    void controller.retry();
+  });
+  const togglePanel = root.querySelector<HTMLButtonElement>("#toggle-panel");
+  if (togglePanel !== null) {
+    void panelIsVisible().then((visible) => {
+      togglePanel.textContent = visible
+        ? "Hide in-page controls"
+        : "Show in-page controls";
+    });
+    togglePanel.addEventListener("click", async () => {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tabId = tabs[0]?.id;
+      if (tabId === undefined) return;
+      const result = await chrome.scripting.executeScript({
+        target: { frameIds: [0], tabId },
+        func: () => {
+          const panel = document.getElementById("pixel-pincher-control-panel");
+          if (panel === null) return false;
+          const visible = panel.style.display === "none";
+          panel.style.display = visible ? "block" : "none";
+          panel.setAttribute("aria-hidden", String(!visible));
+          return visible;
+        },
+      });
+      const visible = result[0]?.result;
+      if (typeof visible === "boolean")
+        togglePanel.textContent = visible
+          ? "Hide in-page controls"
+          : "Show in-page controls";
+    });
+  }
   root.querySelector("#reference-file")?.addEventListener("change", (event) => {
     const target = event.currentTarget;
     if (target instanceof HTMLInputElement && target.files?.[0] !== undefined) {
       selectedFile = target.files[0];
-      const replace = root.querySelector<HTMLButtonElement>("#replace-reference");
+      const replace =
+        root.querySelector<HTMLButtonElement>("#replace-reference");
       if (replace !== null) replace.disabled = false;
     }
   });
   root.querySelector("#replace-reference")?.addEventListener("click", () => {
-    if (selectedFile !== undefined) void controller.importFile(selectedFile, "replace-reference");
+    if (selectedFile !== undefined)
+      void controller.importFile(selectedFile, "replace-reference");
   });
   input(root, "visible")?.addEventListener("change", (event) => {
     const target = event.currentTarget;
-    if (target instanceof HTMLInputElement) controller.updateSettings({ kind: "visibility", visible: target.checked }, "visible");
+    if (target instanceof HTMLInputElement)
+      controller.updateSettings(
+        { kind: "visibility", visible: target.checked },
+        "visible",
+      );
   });
   input(root, "opacity")?.addEventListener("input", (event) => {
     const target = event.currentTarget;
-    if (target instanceof HTMLInputElement) controller.setOpacity(Number(target.value));
+    if (target instanceof HTMLInputElement)
+      controller.setOpacity(Number(target.value));
   });
   input(root, "fit-width")?.addEventListener("change", (event) => {
     const target = event.currentTarget;
-    if (target instanceof HTMLInputElement) controller.setFitWidth(target.checked);
+    if (target instanceof HTMLInputElement)
+      controller.setFitWidth(target.checked);
   });
   input(root, "scale")?.addEventListener("input", (event) => {
     const target = event.currentTarget;
-    if (target instanceof HTMLInputElement) controller.setSizingPercent(Number(target.value));
+    if (target instanceof HTMLInputElement)
+      controller.setSizingPercent(Number(target.value));
   });
   input(root, "scale-number")?.addEventListener("blur", (event) => {
     const target = event.currentTarget;
-    if (target instanceof HTMLInputElement) controller.commitNumber("scale", target.value, "scale-number");
+    if (target instanceof HTMLInputElement)
+      controller.commitNumber("scale", target.value, "scale-number");
   });
-  root.querySelector("#reset-scale")?.addEventListener("click", () => controller.resetScale());
+  root
+    .querySelector("#reset-scale")
+    ?.addEventListener("click", () => controller.resetScale());
   input(root, "inverted")?.addEventListener("change", (event) => {
     const target = event.currentTarget;
-    if (target instanceof HTMLInputElement) controller.updateSettings({ kind: "inversion", inverted: target.checked }, "inverted");
+    if (target instanceof HTMLInputElement)
+      controller.updateSettings(
+        { kind: "inversion", inverted: target.checked },
+        "inverted",
+      );
   });
-  for (const button of root.querySelectorAll<HTMLInputElement>('input[name="interaction"]')) {
-    button.addEventListener("change", () => controller.updateSettings({ kind: "interaction-mode", interactionMode: button.value === "drag" ? "drag" : "click-through" }, button.id));
+  for (const button of root.querySelectorAll<HTMLInputElement>(
+    'input[name="interaction"]',
+  )) {
+    button.addEventListener("change", () =>
+      controller.updateSettings(
+        {
+          kind: "interaction-mode",
+          interactionMode: button.value === "drag" ? "drag" : "click-through",
+        },
+        button.id,
+      ),
+    );
   }
   const placementInputs: readonly ("x" | "y")[] = ["x", "y"];
   for (const kind of placementInputs) {
     const field = input(root, kind);
-    field?.addEventListener("blur", () => controller.commitNumber(kind, field.value, kind));
-    field?.addEventListener("keydown", (event) => handleNumberKey(event, controller, kind, field));
+    field?.addEventListener("blur", () =>
+      controller.commitNumber(kind, field.value, kind),
+    );
+    field?.addEventListener("keydown", (event) =>
+      handleNumberKey(event, controller, kind, field),
+    );
   }
   const scale = input(root, "scale-number");
-  scale?.addEventListener("keydown", (event) => handleNumberKey(event, controller, "scale", scale));
-  root.querySelector("#clear-site")?.addEventListener("click", () => controller.toggleClearConfirmation());
-  root.querySelector("#cancel-clear")?.addEventListener("click", () => controller.toggleClearConfirmation());
-  root.querySelector("#confirm-clear")?.addEventListener("click", () => { void controller.clearSite(); });
-  root.querySelector("#clear-corrupt-site")?.addEventListener("click", () => { void controller.clearSite("clear-corrupt-site"); });
+  scale?.addEventListener("keydown", (event) =>
+    handleNumberKey(event, controller, "scale", scale),
+  );
+  root
+    .querySelector("#clear-site")
+    ?.addEventListener("click", () => controller.toggleClearConfirmation());
+  root
+    .querySelector("#cancel-clear")
+    ?.addEventListener("click", () => controller.toggleClearConfirmation());
+  root.querySelector("#confirm-clear")?.addEventListener("click", () => {
+    void controller.clearSite();
+  });
+  root.querySelector("#clear-corrupt-site")?.addEventListener("click", () => {
+    void controller.clearSite("clear-corrupt-site");
+  });
 }
 
-function handleNumberKey(event: KeyboardEvent, controller: PopupController, kind: "x" | "y" | "scale", field: HTMLInputElement): void {
-  const direction = event.key === "ArrowUp" ? 1 : event.key === "ArrowDown" ? -1 : undefined;
+function handleNumberKey(
+  event: KeyboardEvent,
+  controller: PopupController,
+  kind: "x" | "y" | "scale",
+  field: HTMLInputElement,
+): void {
+  const direction =
+    event.key === "ArrowUp" ? 1 : event.key === "ArrowDown" ? -1 : undefined;
   if (direction !== undefined) {
     event.preventDefault();
     controller.stepNumber(kind, direction, event.shiftKey, field.id);
-  } else if (event.key === "Enter") controller.commitNumber(kind, field.value, field.id);
+  } else if (event.key === "Enter")
+    controller.commitNumber(kind, field.value, field.id);
 }
 
 function createChromeAdapter(): PopupRuntimeAdapter {
   return {
     async getActiveUrl() {
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tabs = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
       return tabs[0]?.url ?? null;
     },
-    async requestOrigin(origin) { return chrome.permissions.request({ origins: [origin] }); },
-    async send(request) { return chrome.runtime.sendMessage(request); },
+    async requestOrigin(origin) {
+      return chrome.permissions.request({ origins: [origin] });
+    },
+    async send(request) {
+      return chrome.runtime.sendMessage(request);
+    },
   };
 }
 
@@ -190,10 +296,16 @@ const importer = createImportReference({
         image.src = url;
       });
       return { width: loaded.naturalWidth, height: loaded.naturalHeight };
-    } finally { URL.revokeObjectURL(url); }
+    } finally {
+      URL.revokeObjectURL(url);
+    }
   },
-  randomReferenceId() { return crypto.randomUUID(); },
-  currentTimestamp() { return Date.now(); },
+  randomReferenceId() {
+    return crypto.randomUUID();
+  },
+  currentTimestamp() {
+    return Date.now();
+  },
 });
 
 const root = document.querySelector<HTMLElement>("#popup-root");
@@ -202,10 +314,18 @@ const view: PopupView = {
   render(state) {
     if (state.kind === "error") selectedFile = undefined;
     root.toggleAttribute("aria-busy", recovery(state).kind === "loading");
-    root.replaceChildren(document.createRange().createContextualFragment(markup(state)));
+    root.replaceChildren(
+      document.createRange().createContextualFragment(markup(state)),
+    );
     attach(root, controller);
   },
-  restoreFocus(controlId) { root.querySelector<HTMLElement>(`#${controlId}`)?.focus(); },
+  restoreFocus(controlId) {
+    root.querySelector<HTMLElement>(`#${controlId}`)?.focus();
+  },
 };
-const controller = new PopupController({ adapter: createChromeAdapter(), view, importer });
+const controller = new PopupController({
+  adapter: createChromeAdapter(),
+  view,
+  importer,
+});
 void controller.start();
