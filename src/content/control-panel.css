@@ -159,6 +159,17 @@ input:focus-visible {
   color: #dbeafe;
 }
 
+#upload-image {
+  color: #93c5fd;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+#upload-image:hover {
+  color: #dbeafe;
+}
+
 #reference-url {
   width: 100%;
   border: 1px solid rgb(148 163 184 / 55%);
@@ -263,6 +274,10 @@ input:focus-visible {
   cursor: pointer;
   font: inherit;
   font-weight: 650;
+}
+
+.file-drop-target.button {
+  cursor: default;
 }
 
 .button:hover:not(:disabled) {
