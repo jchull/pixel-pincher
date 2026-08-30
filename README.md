@@ -1,53 +1,54 @@
 # Pixel Pincher
 
-Pixel Pincher is a Chromium browser extension for placing a reference image
-over a web page while comparing a build against a design. It targets
-Chrome-compatible browsers first; Safari conversion is deliberately outside
-this release.
+Pixel Pincher is a Chromium extension for aligning a reference image with a live web page. It keeps the reference over the page while you adjust its placement, opacity, scale, and interaction mode.
 
 ## Features
 
-- Import one PNG, JPEG, WebP, or SVG reference image for an enabled site.
-- Show or hide the overlay; set transparency from 0% through 100%; scale from
-  10% through 400%, use an exact scale, or fit the image to viewport width.
-- Invert image colors, place it with exact X/Y CSS-pixel inputs, or drag it.
-- Keep the page interactive in click-through mode.
-- Keep image, controls, and placement per site origin; placement can differ by
-  page path and query string.
+- One reference image per enabled site origin: PNG, JPEG, WebP, or SVG.
+- Import by dropping an image, clicking the in-page target, pasting an image, or pasting an `http`/`https` image URL.
+- A draggable, collapsible in-page control panel. Its position is saved per site.
+- Overlay controls for opacity, exact scale, fit-to-viewport width, inversion, and X/Y placement.
+- Live X/Y updates while the overlay is dragged.
+- **Hide/Show** and **Lock/Unlock** toggle buttons. A locked overlay is click-through; unlock it to drag the image.
+- Per-page overlay placement, keyed by origin, path, and query string.
+- Keyboard commands for visibility and placement nudging.
 
-## Setup and unpacked installation
+## Install from source
 
-Pixel Pincher requires Node.js 24 or later and uses pnpm 11.9.0.
+Pixel Pincher requires Node.js 24 or later and pnpm 11.9.0.
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm build
 ```
 
-WXT writes the production extension to `dist/chrome-mv3`.
+WXT writes the extension to `dist/chrome-mv3`.
 
-1. Open `chrome://extensions` in Chrome or the equivalent extensions page in
-   another Chromium browser.
+1. Open `chrome://extensions` in Chrome or another Chromium browser.
 2. Enable **Developer mode**.
-3. Choose **Load unpacked** and select `dist/chrome-mv3`.
-4. Pin Pixel Pincher from the toolbar if desired, open its popup on an HTTP or
-   HTTPS page, and choose **Enable on this site** before importing a reference.
+3. Select **Load unpacked** and choose `dist/chrome-mv3`.
+4. Open the Pixel Pincher toolbar popup on an HTTP or HTTPS page and select
+   **Enable on this site**.
+5. Use the in-page panel to import and adjust a reference image.
 
-Use `pnpm dev` for a development build. After changing the icon design, run
-`node scripts/generate-icons.mjs`; production icons are generated at 16, 32,
-48, and 128 pixels.
+The toolbar popup is also the fallback way to show or hide the in-page panel.
 
-## Site access
+## Site access and privacy
 
-Site access is optional and is granted only for the origin currently selected
-in the popup (for example, `https://example.com/*`). Pixel Pincher does not
-request broad required access to every site. Enabling a site lets the extension
-register its top-frame overlay for that origin, including future reloads.
+Pixel Pincher requests optional access only for the origin currently open in the
+active tab, such as `https://example.com/*`. It does not request blanket access
+to every website. Revoking that permission removes the registered overlay and
+Pixel Pincher data for the origin.
 
-Denying access does not store the selected image. Revoking an origin's access
-removes its registered overlay and its stored Pixel Pincher data. Reload the
-page after granting access if a browser does not inject the overlay into an
-already open document.
+References, settings, and placement are stored locally in `chrome.storage.local`.
+The extension does not send telemetry or upload reference images. Pasting an
+image URL is the exception: Pixel Pincher fetches that URL only at your request.
+The remote server must allow the browser to fetch the image (for example, with
+appropriate CORS headers).
+
+Source images are limited to 10 MiB, encoded data URLs to 14 MiB, and decoded
+images to 40 million pixels. Invalid or unsupported files do not replace an
+existing reference.
 
 ## Keyboard commands
 
@@ -59,67 +60,31 @@ already open document.
 | Nudge reference up | Unassigned | Move the reference up. |
 | Nudge reference down | Unassigned | Move the reference down. |
 
-Nudge commands ship without shortcuts to avoid browser and page conflicts.
-Assign them under `chrome://extensions/shortcuts` (or the equivalent browser
-page).
+Assign unbound shortcuts under `chrome://extensions/shortcuts`.
 
-## Local data, limits, and privacy
-
-- Pixel Pincher stores references, settings, and placement per origin in
-  `chrome.storage.local`. It requests `unlimitedStorage` so several site
-  references can be retained locally.
-- Source images are limited to 10 MiB; their encoded reference data URLs are limited to 14 MiB. Decoded images are
-  limited to 40 million pixels. Invalid, unsupported, oversized, or
-  undecodable images are rejected without replacing an existing reference.
-- The extension makes no network requests and does not collect or transmit
-  page content or reference images.
-- Incognito is disabled (`incognito: not_allowed`).
-
-Choose **Clear site data** in the popup to remove the current origin's image,
-settings, placement overrides, and registered overlay.
-
-## Troubleshooting and exclusions
-
-- Pixel Pincher supports only top-level HTTP and HTTPS pages. It does not run
-  on `file://` URLs, browser-owned pages such as `chrome://`, the Chrome Web
-  Store, iframes, or incognito windows.
-- If the popup says site access is required, select **Enable on this site** and
-  accept the exact-origin permission prompt. If it was previously enabled,
-  check the browser's extension site-access settings and regrant the origin.
-- If no overlay appears after a successful grant, reload the tab. Confirm that
-  the page is a supported top-level HTTP(S) page and that the extension remains
-  enabled on the extensions page.
-- If an import fails, use PNG, JPEG, WebP, or SVG within the data and pixel
-  limits above. Animated GIF, text files, malformed images, and images with a
-  MIME/type mismatch are rejected.
-- If the overlay is misplaced, use the exact X/Y inputs or drag mode. Its
-  placement is in document CSS pixels, so it follows page scrolling.
-
-The first release excludes image diffing, multiple layers, side-by-side view,
-image editing, annotations, rulers, cloud storage, sharing, accounts,
-cross-device sync, and animated GIF.
-
-## Development and verification
+## Development
 
 | Command | Purpose |
 | --- | --- |
-| `pnpm dev` | Run the development build. |
+| `pnpm dev` | Run a development build. |
 | `pnpm build` | Create and assert a production extension build. |
 | `pnpm check` | Type-check the project. |
 | `pnpm lint` | Run ESLint. |
 | `pnpm test` | Run unit tests. |
 
-See [the Chromium release checklist](docs/release-checklist.md) for required
-versioning, permissions, icon, screenshot, privacy, package, rollback, and
-manual Chrome/Chromium release verification. Manual browser checks must be
-recorded there; they are not implied by automated checks.
+See [the Chromium release checklist](docs/release-checklist.md) for manual
+browser verification before a release.
 
-## Project layout
+## Limitations
 
-- `entrypoints/` — WXT entrypoints: background service worker, popup, and
-  overlay content registration.
-- `src/` — shared contracts plus background, content, and popup logic.
-- `public/icon/` — production extension icons.
-- `tests/` — Vitest unit tests.
-- `docs/release-checklist.md` — release procedure and manual browser matrix.
-- `docs/plan.md` — implementation plan and task breakdown.
+Pixel Pincher supports only top-level HTTP and HTTPS pages. It does not run on
+`file://` URLs, browser-owned pages such as `chrome://`, the Chrome Web Store,
+iframes, or incognito windows. The first release does not include image diffing,
+multiple layers, annotations, cloud storage, sharing, accounts, cross-device
+sync, or animated GIF support.
+
+## License
+
+Pixel Pincher is licensed under the [Apache License 2.0](LICENSE). Third-party
+notices, including the vendored Lucide icons, are in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
