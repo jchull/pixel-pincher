@@ -58,6 +58,7 @@ type DragState = Readonly<{
 type PendingSetting = Readonly<{ patch: SettingsPatch; coalesce: boolean }>;
 
 type PanelElements = Readonly<{
+  close: HTMLButtonElement;
   handle: HTMLButtonElement;
   collapse: HTMLButtonElement;
   live: HTMLElement;
@@ -112,6 +113,7 @@ export class ControlPanel {
       this.#handleLostPointerCapture,
     );
     e.handle.addEventListener("dragstart", preventDefault);
+    e.close.addEventListener("click", this.#closePanel);
     e.collapse.addEventListener("click", this.#toggleCollapsed);
     e.file.addEventListener("change", this.#handleFile);
     e.fileDropTarget.addEventListener("click", this.#openFilePicker);
@@ -217,6 +219,16 @@ export class ControlPanel {
       : "Clear site data";
   }
 
+  #closePanel = (): void => {
+    void this.#hideOverlayAndPanel();
+  };
+  async #hideOverlayAndPanel(): Promise<void> {
+    await this.#send({
+      kind: "update-settings",
+      patch: { kind: "visibility", visible: false },
+    });
+    this.#host.style.display = "none";
+  }
   #toggleCollapsed = (): void => {
     this.#collapsed = !this.#collapsed;
     this.#render();
@@ -620,12 +632,15 @@ function findOrCreatePanel(
   panel.setAttribute("aria-label", "Pixel Pincher control panel");
   const header = document.createElement("div");
   header.className = "header";
+  const close = button(document, "close-panel", "Hide overlay and control panel");
+  close.className = "close";
+  close.textContent = "×";
   const handle = button(document, "handle", "Drag control panel");
   handle.innerHTML =
     '<span>Pixel Pincher</span><span class="grip" aria-hidden="true">⠿</span>';
   const collapse = button(document, "collapse-panel", "Collapse control panel");
   collapse.className = "collapse";
-  header.append(handle, collapse);
+  header.append(close, handle, collapse);
   const content = document.createElement("div");
   content.className = "content";
   const file = document.createElement("input");
@@ -682,6 +697,7 @@ function findOrCreatePanel(
   panel.append(header, content);
   root.append(style, panel);
   return {
+    close,
     handle,
     collapse,
     live,

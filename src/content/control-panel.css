@@ -67,10 +67,10 @@
   cursor: grabbing;
 }
 
+.close,
 .collapse {
   width: 40px;
   border: 0;
-  border-left: 1px solid rgb(148 163 184 / 20%);
   padding: 0;
   background: transparent;
   color: #cbd5e1;
@@ -79,9 +79,22 @@
   font-size: 18px;
 }
 
+.close {
+  border-right: 1px solid rgb(148 163 184 / 20%);
+}
+
+.collapse {
+  border-left: 1px solid rgb(148 163 184 / 20%);
+}
+
+.close:hover,
 .collapse:hover {
   background: rgb(51 65 85 / 65%);
   color: #f8fafc;
+}
+
+.close:hover {
+  color: #fecaca;
 }
 
 .handle:focus-visible,

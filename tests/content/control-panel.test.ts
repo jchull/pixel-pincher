@@ -111,7 +111,7 @@ describe("ControlPanel", () => {
     });
   });
 
-  it("renders hydrated reference metadata and visibility in an isolated closed shadow panel", () => {
+  it("renders hydrated reference metadata and visibility in an isolated closed shadow panel", async () => {
     panel.apply(snapshot(1));
     const host = document.querySelector<HTMLElement>(
       "#pixel-pincher-control-panel",
@@ -147,6 +147,8 @@ describe("ControlPanel", () => {
     expect(
       elements.some((element) => element.classList.contains("position-inputs")),
     ).toBe(true);
+    const close = buttons.find((button) => button.id === "close-panel");
+    if (close === undefined) throw new Error("Expected close button.");
     const collapse = buttons.find((button) => button.id === "collapse-panel");
     if (collapse === undefined) throw new Error("Expected collapse button.");
     expect(collapse.getAttribute("aria-expanded")).toBe("true");
@@ -156,6 +158,8 @@ describe("ControlPanel", () => {
       elements.find((element) => element.classList.contains("panel"))
         ?.classList,
     ).toContain("collapsed");
+    close.click();
+    await vi.waitFor(() => expect(host?.style.display).toBe("none"));
   });
 
   it("moves only from its dedicated handle, persists on pointer-up and lost capture, and cancels on Escape", () => {
