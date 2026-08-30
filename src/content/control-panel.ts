@@ -743,7 +743,10 @@ function findOrCreatePanel(
   uploadImage.id = "upload-image";
   uploadImage.href = "#";
   uploadImage.textContent = "click to choose";
-  fileDropTarget.append(uploadImage);
+  const uploadLine = document.createElement("span");
+  uploadLine.className = "upload-line";
+  uploadLine.append(uploadImage);
+  fileDropTarget.append(uploadLine);
   const referenceUrl = document.createElement("input");
   referenceUrl.id = "reference-url";
   referenceUrl.type = "url";

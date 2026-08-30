@@ -248,6 +248,7 @@ describe("ControlPanel", () => {
     const file = byId<HTMLInputElement>("reference-file");
     const dropTarget = byId<HTMLElement>("reference-drop-target");
     const uploadImage = byId<HTMLAnchorElement>("upload-image");
+    expect(uploadImage.parentElement?.className).toBe("upload-line");
     const pickFile = vi.spyOn(file, "click");
     uploadImage.click();
     expect(pickFile).toHaveBeenCalledOnce();

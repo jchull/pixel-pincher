@@ -159,8 +159,11 @@ input:focus-visible {
   color: #dbeafe;
 }
 
-#upload-image {
+.upload-line {
   flex-basis: 100%;
+}
+
+#upload-image {
   color: #93c5fd;
   cursor: pointer;
   text-decoration: underline;
