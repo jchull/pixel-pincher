@@ -326,7 +326,7 @@ export const DEFAULT_ORIGIN_SETTINGS: OriginRecordV1["settings"] = deepFreeze({
   opacity: 0.5,
   inverted: false,
   sizing: { kind: "scale", percent: 100 },
-  interactionMode: "click-through",
+  interactionMode: "drag",
 });
 
 export const DEFAULT_SETTINGS: OverlaySettings = deepFreeze({

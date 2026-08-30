@@ -26,14 +26,14 @@ describe("shared contracts", () => {
       inverted: false,
       placement: { x: 0, y: 0 },
       sizing: { kind: "scale", percent: 100 },
-      interactionMode: "click-through",
+      interactionMode: "drag",
     });
     expect(DEFAULT_ORIGIN_SETTINGS).toEqual({
       visible: true,
       opacity: 0.5,
       inverted: false,
       sizing: { kind: "scale", percent: 100 },
-      interactionMode: "click-through",
+      interactionMode: "drag",
     });
     expect(Object.isFrozen(DEFAULT_SETTINGS)).toBe(true);
     expect(Object.isFrozen(DEFAULT_SETTINGS.placement)).toBe(true);
