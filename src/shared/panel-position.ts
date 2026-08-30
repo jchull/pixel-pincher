@@ -11,6 +11,7 @@ import {
   type PanelPosition,
   type PublicError,
   type Result,
+  type TabState,
 } from "./contracts";
 import {
   parseContentRequest,
@@ -20,6 +21,7 @@ import {
   parseOverlaySnapshot,
   parsePublicError,
   parseSettingsPatch,
+  parseTabState,
 } from "./parse";
 
 type UnknownRecord = Record<string, unknown>;
@@ -106,6 +108,23 @@ export function parseOverlaySnapshotWithPanelPosition(
   const parsed = parseOverlaySnapshot(legacySnapshot);
   if (!parsed.ok) return parsed;
   return { ok: true, value: { ...parsed.value, panelPosition: panelPosition.value } };
+}
+
+/** Parses popup tab state while accepting the optional persisted panel position. */
+export function parseTabStateWithPanelPosition(
+  value: unknown,
+): Result<TabState, PublicError> {
+  if (!isOwnDataRecord(value) || !isOwnDataRecord(value.snapshot))
+    return parseTabState(value);
+  const snapshot = parseOverlaySnapshotWithPanelPosition(value.snapshot);
+  if (!snapshot.ok || !Object.hasOwn(value.snapshot, "panelPosition"))
+    return parseTabState(value);
+  const legacySnapshot = { ...value.snapshot };
+  delete legacySnapshot.panelPosition;
+  const parsed = parseTabState({ ...value, snapshot: legacySnapshot });
+  return parsed.ok
+    ? { ok: true, value: { ...parsed.value, snapshot: snapshot.value } }
+    : parsed;
 }
 
 /** Parses only the correlated mutation request allowed from a top-frame content panel. */
