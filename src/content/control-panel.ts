@@ -62,7 +62,7 @@ type PanelElements = Readonly<{
   live: HTMLElement;
   file: HTMLInputElement;
   fileDropTarget: HTMLButtonElement;
-  visible: HTMLInputElement;
+  hide: HTMLInputElement;
   opacity: HTMLInputElement;
   opacityNumber: HTMLInputElement;
   fitWidth: HTMLInputElement;
@@ -117,7 +117,7 @@ export class ControlPanel {
     e.fileDropTarget.addEventListener("dragleave", this.#handleDragLeave);
     e.fileDropTarget.addEventListener("drop", this.#handleDrop);
     e.fileDropTarget.addEventListener("paste", this.#handlePaste);
-    e.visible.addEventListener("change", this.#handleVisibility);
+    e.hide.addEventListener("change", this.#handleVisibility);
     e.opacity.addEventListener("input", this.#handleOpacity);
     e.opacityNumber.addEventListener("input", this.#handleOpacityNumber);
     e.opacityNumber.addEventListener("keydown", this.#handleNumberKey);
@@ -175,7 +175,7 @@ export class ControlPanel {
     const settings = snapshot.settings;
     const disabled = snapshot.reference === null;
     e.file.disabled = false;
-    e.visible.checked = settings.visible;
+    e.hide.checked = !settings.visible;
     e.opacity.value = String(Math.round(settings.opacity * 100));
     e.opacityNumber.value = e.opacity.value;
     e.fitWidth.checked = settings.sizing.kind === "fit-width";
@@ -189,7 +189,7 @@ export class ControlPanel {
     e.x.value = String(settings.placement.x);
     e.y.value = String(settings.placement.y);
     for (const control of [
-      e.visible,
+      e.hide,
       e.opacity,
       e.opacityNumber,
       e.fitWidth,
@@ -271,7 +271,7 @@ export class ControlPanel {
   #handleVisibility = (): void =>
     this.#queueSetting({
       kind: "visibility",
-      visible: this.#elements.visible.checked,
+      visible: !this.#elements.hide.checked,
     });
   #handleOpacity = (): void => {
     const percent = clampPercent(Number(this.#elements.opacity.value));
@@ -617,7 +617,7 @@ function findOrCreatePanel(
   const legend = document.createElement("legend");
   legend.textContent = "Overlay controls";
   controls.append(legend);
-  const visible = checkbox(document, "visible", "Show overlay");
+  const hide = checkbox(document, "overlay-hide", "👁 Hide");
   const opacity = range(document, "opacity", 0, 100);
   const opacityNumber = number(document, "opacity-number", 0, 100);
   const fitWidth = checkbox(document, "fit-width", "Fit to viewport width");
@@ -634,7 +634,7 @@ function findOrCreatePanel(
   const y = number(document, "y", MIN_PLACEMENT, MAX_PLACEMENT);
   const quickControls = document.createElement("div");
   quickControls.className = "quick-controls";
-  quickControls.append(visible.parentElement!, lock.parentElement!);
+  quickControls.append(hide.parentElement!, lock.parentElement!);
   appendRangeControl(controls, "Opacity", opacity, opacityNumber);
   appendRangeControl(controls, "Scale", scale, scaleNumber);
   appendPositionControls(controls, x, y);
@@ -664,7 +664,7 @@ function findOrCreatePanel(
     live,
     file,
     fileDropTarget,
-    visible,
+    hide,
     opacity,
     opacityNumber,
     fitWidth,

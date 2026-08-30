@@ -132,7 +132,14 @@ describe("ControlPanel", () => {
     ).toBe("polite");
     expect(buttons.some((button) => button.id.startsWith("move-"))).toBe(false);
     expect(buttons.some((button) => button.id === "reset-scale")).toBe(false);
-    const lockToggle = elements.find((element) => element.id === "overlay-lock");
+    const hideToggle = elements.find((element) => element.id === "overlay-hide");
+    if (!(hideToggle instanceof HTMLInputElement))
+      throw new Error("Expected overlay hide toggle.");
+    expect(hideToggle.type).toBe("checkbox");
+    expect(hideToggle.checked).toBe(false);
+    const lockToggle = elements.find(
+      (element) => element.id === "overlay-lock",
+    );
     if (!(lockToggle instanceof HTMLInputElement))
       throw new Error("Expected overlay lock toggle.");
     expect(lockToggle.type).toBe("checkbox");
@@ -286,7 +293,7 @@ describe("ControlPanel", () => {
         }),
       ),
     );
-    byId<HTMLInputElement>("visible").click();
+    byId<HTMLInputElement>("overlay-hide").click();
     byId<HTMLInputElement>("fit-width").click();
     byId<HTMLInputElement>("inverted").click();
     byId<HTMLInputElement>("overlay-lock").click();
@@ -325,9 +332,11 @@ describe("ControlPanel", () => {
     );
     expect(host?.style.left).toBe("352px");
     expect(host?.style.top).toBe("260px");
-    const showOverlay = elements.find((element) => element.id === "visible");
-    if (!(showOverlay instanceof HTMLInputElement))
-      throw new Error("Expected show-overlay checkbox.");
-    expect(showOverlay.checked).toBe(false);
+    const hideOverlay = elements.find(
+      (element) => element.id === "overlay-hide",
+    );
+    if (!(hideOverlay instanceof HTMLInputElement))
+      throw new Error("Expected overlay hide checkbox.");
+    expect(hideOverlay.checked).toBe(true);
   });
 });
