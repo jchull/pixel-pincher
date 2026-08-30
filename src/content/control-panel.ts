@@ -61,6 +61,7 @@ type PanelElements = Readonly<{
   handle: HTMLButtonElement;
   live: HTMLElement;
   file: HTMLInputElement;
+  fileDropTarget: HTMLButtonElement;
   visible: HTMLInputElement;
   opacity: HTMLInputElement;
   opacityNumber: HTMLInputElement;
@@ -110,6 +111,12 @@ export class ControlPanel {
     );
     e.handle.addEventListener("dragstart", preventDefault);
     e.file.addEventListener("change", this.#handleFile);
+    e.fileDropTarget.addEventListener("click", this.#openFilePicker);
+    e.fileDropTarget.addEventListener("dragenter", this.#handleDragEnter);
+    e.fileDropTarget.addEventListener("dragover", this.#handleDragOver);
+    e.fileDropTarget.addEventListener("dragleave", this.#handleDragLeave);
+    e.fileDropTarget.addEventListener("drop", this.#handleDrop);
+    e.fileDropTarget.addEventListener("paste", this.#handlePaste);
     e.visible.addEventListener("change", this.#handleVisibility);
     e.opacity.addEventListener("input", this.#handleOpacity);
     e.opacityNumber.addEventListener("input", this.#handleOpacityNumber);
@@ -199,11 +206,31 @@ export class ControlPanel {
       : "Clear site data";
   }
 
-  #handleFile = (): void => {
-    const file = this.#elements.file.files?.[0];
-    if (file === undefined || this.#importReference === undefined) return;
-    void this.#importFile(file);
+  #openFilePicker = (): void => this.#elements.file.click();
+  #handleFile = (): void => this.#importFirstFile(this.#elements.file.files);
+  #handleDragEnter = (event: DragEvent): void => {
+    event.preventDefault();
+    this.#elements.fileDropTarget.classList.add("dragging");
   };
+  #handleDragOver = (event: DragEvent): void => event.preventDefault();
+  #handleDragLeave = (): void =>
+    this.#elements.fileDropTarget.classList.remove("dragging");
+  #handleDrop = (event: DragEvent): void => {
+    event.preventDefault();
+    this.#elements.fileDropTarget.classList.remove("dragging");
+    this.#importFirstFile(event.dataTransfer?.files ?? null);
+  };
+  #handlePaste = (event: ClipboardEvent): void => {
+    const files = event.clipboardData?.files ?? null;
+    if (files === null || files.length === 0) return;
+    event.preventDefault();
+    this.#importFirstFile(files);
+  };
+  #importFirstFile(files: FileList | null): void {
+    const file = files?.[0];
+    if (file !== undefined && this.#importReference !== undefined)
+      void this.#importFile(file);
+  }
 
   async #importFile(file: File): Promise<void> {
     try {
@@ -578,7 +605,13 @@ function findOrCreatePanel(
   file.id = "reference-file";
   file.type = "file";
   file.accept = "image/png,image/jpeg,image/webp,image/svg+xml";
-  file.setAttribute("aria-label", "Choose or replace reference image");
+  file.hidden = true;
+  const fileDropTarget = button(
+    document,
+    "reference-drop-target",
+    "Drop or paste an image, or click to choose one",
+  );
+  fileDropTarget.classList.add("file-drop-target");
   const controls = document.createElement("fieldset");
   controls.className = "controls";
   const legend = document.createElement("legend");
@@ -615,13 +648,14 @@ function findOrCreatePanel(
   live.className = "live";
   live.setAttribute("role", "status");
   live.setAttribute("aria-live", "polite");
-  content.append(file, quickControls, controls, clear, confirm, live);
+  content.append(file, fileDropTarget, quickControls, controls, clear, confirm, live);
   panel.append(handle, content);
   root.append(style, panel);
   return {
     handle,
     live,
     file,
+    fileDropTarget,
     visible,
     opacity,
     opacityNumber,

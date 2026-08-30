@@ -224,6 +224,10 @@ describe("ControlPanel", () => {
       return found as T;
     };
     const file = byId<HTMLInputElement>("reference-file");
+    const dropTarget = byId<HTMLButtonElement>("reference-drop-target");
+    const pickFile = vi.spyOn(file, "click");
+    dropTarget.click();
+    expect(pickFile).toHaveBeenCalledOnce();
     Object.defineProperty(file, "files", {
       configurable: true,
       value: [new File(["x"], "reference.png", { type: "image/png" })],
@@ -302,6 +306,16 @@ describe("ControlPanel", () => {
         expect.objectContaining({ kind: "clear-site" }),
       ),
     );
+    const dropped = new File(["drop"], "dropped.png", { type: "image/png" });
+    const drop = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, "dataTransfer", { value: { files: [dropped] } });
+    dropTarget.dispatchEvent(drop);
+    await vi.waitFor(() => expect(importer).toHaveBeenCalledTimes(2));
+    const pasted = new File(["paste"], "pasted.png", { type: "image/png" });
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", { value: { files: [pasted] } });
+    dropTarget.dispatchEvent(paste);
+    await vi.waitFor(() => expect(importer).toHaveBeenCalledTimes(3));
   });
 
   it("clamps persisted positions to keep its handle reachable", () => {
