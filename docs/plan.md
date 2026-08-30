@@ -18,7 +18,7 @@ The Chromium release includes:
 - PNG, JPEG, WebP, and SVG import.
 - A page overlay that follows document scrolling without changing page layout.
 - Transparency from 0% through 100% and independent visibility.
-- Proportional resizing from 10% through 400%, a 100% native-size preset, and fit-to-viewport-width sizing.
+- Proportional resizing from 10% through 600%, a 100% native-size preset, and fit-to-viewport-width sizing.
 - Reference-image color inversion.
 - Click-through and drag interaction modes.
 - Exact X and Y placement in CSS pixels.
@@ -59,7 +59,7 @@ Clearing a reference removes the origin image and its controls and placement. It
 
 `placement.x` and `placement.y` are integer CSS pixels from the document's top-left corner. The overlay host is fixed and has no layout effect. The renderer subtracts `window.scrollX` and `window.scrollY` from placement when it paints, so the image follows document scrolling without creating scrollbars.
 
-Scale sizing renders the image proportionally from 10% through 400%. A scale of 100% renders one image pixel per CSS pixel, subject to the browser's device scaling. Fit-width sizing scales the image proportionally until its rendered width equals `window.innerWidth`. Placement remains in unscaled document CSS pixels for either sizing choice. Inversion applies `invert(1)` to the reference image only and does not alter the page.
+Scale sizing renders the image proportionally from 10% through 600%. A scale of 100% renders one image pixel per CSS pixel, subject to the browser's device scaling. Fit-width sizing scales the image proportionally until its rendered width equals `window.innerWidth`. Placement remains in unscaled document CSS pixels for either sizing choice. Inversion applies `invert(1)` to the reference image only and does not alter the page.
 
 ### Stored images and control state are separate
 
@@ -141,7 +141,7 @@ type OverlaySnapshot = Readonly<{
 
 Defaults are visible, 50% opacity, normal colors, placement `{ x: 0, y: 0 }`, fit-width sizing with a remembered 100% manual scale, and click-through interaction.
 
-Clamp opacity to the inclusive range 0 through 1. Scale percent must be an integer from 10 through 400. Placement values must be finite integers within `-1_000_000` through `1_000_000`. Image dimensions must be positive integers, and `width * height` must not exceed 40 million pixels.
+Clamp opacity to the inclusive range 0 through 1. Scale percent must be an integer from 10 through 600. Placement values must be finite integers within `-1_000_000` through `1_000_000`. Image dimensions must be positive integers, and `width * height` must not exceed 40 million pixels.
 
 `revision` increases after every committed origin or page mutation. The content controller ignores messages with a revision lower than its current revision. Equal revisions are safe to apply again.
 
@@ -511,7 +511,7 @@ Implement content startup, Shadow DOM creation, hydration, settings-only updates
 
 Use the renderer proven in Task 0. Do not let the host affect page layout or scrolling. Announce `content-ready` with `location.href`. Report image decode or render failure with reference identity.
 
-Test duplicate startup, old and equal revisions, scroll math, viewport resize, 10%, 100%, and 400% sizing, fit-width transitions, transparency endpoints, inversion on and off, hiding without image loss, image replacement, clear, listener cleanup, drag commit, drag cancellation, and pointer capture loss.
+Test duplicate startup, old and equal revisions, scroll math, viewport resize, 10%, 100%, and 600% sizing, fit-width transitions, transparency endpoints, inversion on and off, hiding without image loss, image replacement, clear, listener cleanup, drag commit, drag cancellation, and pointer capture loss.
 
 **Acceptance:** The overlay aligns to document coordinates while scrolling and remains isolated on the CSP fixture and a page with aggressive global CSS.
 
@@ -573,7 +573,7 @@ Run the release matrix on current stable Chrome and one other Chromium browser:
 
 - Import each supported image type.
 - Reject every documented invalid image class.
-- Exercise visibility, 0%, 50%, and 100% transparency, 10%, 100%, and 400% scale, fit width, inversion, interaction modes, drag, exact inputs, and commands.
+- Exercise visibility, 0%, 50%, and 100% transparency, 10%, 100%, and 600% scale, fit width, inversion, interaction modes, drag, exact inputs, and commands.
 - Scroll and resize at several browser zoom levels.
 - Reload and restart the browser.
 - Navigate a multi-route SPA, including query and hash changes.

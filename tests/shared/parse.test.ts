@@ -96,7 +96,10 @@ describe("boundary parsers", () => {
     expect(parseOverlaySettings({ ...settings, extra: true }).ok).toBe(false);
     expect(parseSizing({ kind: "scale", percent: 10 }).ok).toBe(true);
     expect(parseSizing({ kind: "scale", percent: 10.5 }).ok).toBe(false);
-    expect(parseSizing({ kind: "fit-width", lastScalePercent: 401 }).ok).toBe(
+    expect(parseSizing({ kind: "fit-width", lastScalePercent: 600 }).ok).toBe(
+      true,
+    );
+    expect(parseSizing({ kind: "fit-width", lastScalePercent: 601 }).ok).toBe(
       false,
     );
     expect(parseSettingsPatch({ kind: "inversion", inverted: true }).ok).toBe(
@@ -498,7 +501,7 @@ describe("boundary parsers", () => {
       },
       {
         valid: { kind: "sizing", sizing: { kind: "scale", percent: 100 } },
-        invalid: { kind: "sizing", sizing: { kind: "scale", percent: 401 } },
+        invalid: { kind: "sizing", sizing: { kind: "scale", percent: 601 } },
       },
       {
         valid: { kind: "interaction-mode", interactionMode: "drag" },

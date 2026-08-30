@@ -382,7 +382,7 @@ describe("popup controller", () => {
     });
     expect(patches).toContainEqual({
       kind: "sizing",
-      sizing: { kind: "scale", percent: 400 },
+      sizing: { kind: "scale", percent: 600 },
     });
     expect(patches).toContainEqual({
       kind: "sizing",
