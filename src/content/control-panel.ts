@@ -65,8 +65,7 @@ type PanelElements = Readonly<{
   collapse: HTMLButtonElement;
   live: HTMLElement;
   file: HTMLInputElement;
-  fileDropTarget: HTMLElement;
-  uploadImage: HTMLAnchorElement;
+  fileDropTarget: HTMLButtonElement;
   referenceUrl: HTMLInputElement;
   hide: HTMLButtonElement;
   opacity: HTMLInputElement;
@@ -121,7 +120,7 @@ export class ControlPanel {
     e.close.addEventListener("click", this.#closePanel);
     e.collapse.addEventListener("click", this.#toggleCollapsed);
     e.file.addEventListener("change", this.#handleFile);
-    e.uploadImage.addEventListener("click", this.#openFilePicker);
+    e.fileDropTarget.addEventListener("click", this.#openFilePicker);
     e.fileDropTarget.addEventListener("dragenter", this.#handleDragEnter);
     e.fileDropTarget.addEventListener("dragover", this.#handleDragOver);
     e.fileDropTarget.addEventListener("dragleave", this.#handleDragLeave);
@@ -261,10 +260,7 @@ export class ControlPanel {
     this.#collapsed = !this.#collapsed;
     this.#render();
   };
-  #openFilePicker = (event: MouseEvent): void => {
-    event.preventDefault();
-    this.#elements.file.click();
-  };
+  #openFilePicker = (): void => this.#elements.file.click();
   #handleFile = (): void => this.#importFirstFile(this.#elements.file.files);
   #handleDragEnter = (event: DragEvent): void => {
     event.preventDefault();
@@ -730,22 +726,12 @@ function findOrCreatePanel(
   file.type = "file";
   file.accept = "image/png,image/jpeg,image/webp,image/svg+xml";
   file.hidden = true;
-  const fileDropTarget = document.createElement("div");
-  fileDropTarget.id = "reference-drop-target";
-  fileDropTarget.className = "file-drop-target";
-  fileDropTarget.tabIndex = 0;
-  fileDropTarget.setAttribute(
-    "aria-label",
-    "Drop an image, focus here and paste an image or URL, or upload an image",
+  const fileDropTarget = button(
+    document,
+    "reference-drop-target",
+    "Drop an image or click to choose one",
   );
-  fileDropTarget.append(
-    "Drop an image, focus here and paste an image or URL, or ",
-  );
-  const uploadImage = document.createElement("a");
-  uploadImage.id = "upload-image";
-  uploadImage.href = "#";
-  uploadImage.textContent = "upload an image";
-  fileDropTarget.append(uploadImage, ".");
+  fileDropTarget.classList.add("file-drop-target");
   const referenceUrl = document.createElement("input");
   referenceUrl.id = "reference-url";
   referenceUrl.type = "url";
@@ -810,7 +796,6 @@ function findOrCreatePanel(
     live,
     file,
     fileDropTarget,
-    uploadImage,
     referenceUrl,
     hide,
     opacity,

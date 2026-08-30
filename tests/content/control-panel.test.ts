@@ -246,10 +246,9 @@ describe("ControlPanel", () => {
       return found as T;
     };
     const file = byId<HTMLInputElement>("reference-file");
-    const dropTarget = byId<HTMLElement>("reference-drop-target");
-    const uploadImage = byId<HTMLAnchorElement>("upload-image");
+    const dropTarget = byId<HTMLButtonElement>("reference-drop-target");
     const pickFile = vi.spyOn(file, "click");
-    uploadImage.click();
+    dropTarget.click();
     expect(pickFile).toHaveBeenCalledOnce();
     Object.defineProperty(file, "files", {
       configurable: true,

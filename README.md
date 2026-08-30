@@ -5,7 +5,7 @@ Pixel Pincher is a Chromium extension for aligning a reference image with a live
 ## Features
 
 - One reference image per enabled site origin: PNG, JPEG, WebP, or SVG.
-- Import by dropping an image, focusing the import target to paste an image or URL, clicking its **upload an image** link, or using the URL field for an `http`, `https`, current-page `blob`, or `data:` image URL.
+- Import by dropping an image, clicking the import target to choose one, pasting an image into its focused target, or using the URL field for an `http`, `https`, current-page `blob`, or `data:` image URL.
 - A draggable, collapsible in-page control panel. Its position is saved per site.
 - Overlay controls for opacity, exact scale, fit-to-viewport width, inversion, and X/Y placement.
 - Live X/Y updates while the overlay is dragged.
