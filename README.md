@@ -56,7 +56,6 @@ existing reference.
 | --- | --- | --- |
 | Toggle reference visibility | `Alt+Shift+P` | Show or hide the overlay. |
 
-
 Assign unbound shortcuts under `chrome://extensions/shortcuts`.
 
 ## Development
