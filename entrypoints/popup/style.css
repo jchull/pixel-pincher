@@ -178,6 +178,11 @@ input:focus-visible {
   font-weight: 600;
 }
 
+#popup-root {
+  width: 320px;
+  min-height: 160px;
+}
+
 #popup-status {
   margin-bottom: var(--space-2);
 }
