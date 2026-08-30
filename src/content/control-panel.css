@@ -170,7 +170,17 @@ input:focus-visible {
 }
 
 .quick-controls .toggle-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   margin: 0;
+}
+
+.quick-controls .toggle-button svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
 }
 
 .quick-controls .toggle-button[aria-pressed="true"] {

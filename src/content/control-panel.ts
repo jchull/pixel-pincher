@@ -1,4 +1,5 @@
 import controlPanelStyles from "./control-panel.css?inline";
+import { lucideIcon } from "./lucide-icons";
 
 import {
   createImportReference,
@@ -675,7 +676,7 @@ function findOrCreatePanel(
   const legend = document.createElement("legend");
   legend.textContent = "Overlay controls";
   controls.append(legend);
-  const hide = toggleButton(document, "overlay-hide", "👁 Hide");
+  const hide = toggleButton(document, "overlay-hide", "Hide");
   const opacity = range(document, "opacity", 0, 100);
   const opacityNumber = number(document, "opacity-number", 0, 100);
   const fitWidth = checkbox(document, "fit-width", "Fit to viewport width");
@@ -687,7 +688,7 @@ function findOrCreatePanel(
     MAX_SCALE_PERCENT,
   );
   const inverted = checkbox(document, "inverted", "Invert colors");
-  const lock = toggleButton(document, "overlay-lock", "🔒 Lock");
+  const lock = toggleButton(document, "overlay-lock", "Lock");
   const x = number(document, "x", MIN_PLACEMENT, MAX_PLACEMENT);
   const y = number(document, "y", MIN_PLACEMENT, MAX_PLACEMENT);
   const quickControls = document.createElement("div");
@@ -819,12 +820,25 @@ function setToggleState(toggle: HTMLButtonElement, pressed: boolean): void {
 
 function setHideToggleState(toggle: HTMLButtonElement, hidden: boolean): void {
   setToggleState(toggle, hidden);
-  toggle.textContent = hidden ? "👁 Show" : "🙈 Hide";
+  setToggleLabel(toggle, hidden ? "eye" : "eye-off", hidden ? "Show" : "Hide");
 }
 
 function setLockToggleState(toggle: HTMLButtonElement, locked: boolean): void {
   setToggleState(toggle, locked);
-  toggle.textContent = locked ? "🔓 Unlock" : "🔒 Lock";
+  setToggleLabel(
+    toggle,
+    locked ? "lock-keyhole-open" : "lock",
+    locked ? "Unlock" : "Lock",
+  );
+}
+
+function setToggleLabel(
+  toggle: HTMLButtonElement,
+  icon: "eye" | "eye-off" | "lock" | "lock-keyhole-open",
+  label: string,
+): void {
+  toggle.replaceChildren(lucideIcon(toggle.ownerDocument, icon), label);
+  toggle.setAttribute("aria-label", `${label} overlay`);
 }
 
 function appendPositionControls(
