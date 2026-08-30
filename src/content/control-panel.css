@@ -160,6 +160,7 @@ input:focus-visible {
 }
 
 #upload-image {
+  flex-basis: 100%;
   color: #93c5fd;
   cursor: pointer;
   text-decoration: underline;
