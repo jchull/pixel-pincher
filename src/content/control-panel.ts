@@ -604,8 +604,7 @@ function findOrCreatePanel(
   quickControls.append(visible.parentElement!, drag.parentElement!);
   appendRangeControl(controls, "Opacity", opacity, opacityNumber);
   appendRangeControl(controls, "Scale", scale, scaleNumber);
-  appendLabeled(controls, "X position", x);
-  appendLabeled(controls, "Y position", y);
+  appendPositionControls(controls, x, y);
   controls.append(fitWidth.parentElement!, inverted.parentElement!);
   const clear = button(document, "clear-site", "Clear site data");
   const confirm = document.createElement("p");
@@ -702,6 +701,18 @@ function appendLabeled(
   if (extra !== undefined) wrapper.append(extra);
   parent.append(wrapper);
 }
+function appendPositionControls(
+  parent: HTMLElement,
+  x: HTMLInputElement,
+  y: HTMLInputElement,
+): void {
+  const group = parent.ownerDocument.createElement("div");
+  group.className = "position-inputs";
+  appendLabeled(group, "X position", x);
+  appendLabeled(group, "Y position", y);
+  parent.append(group);
+}
+
 function appendRangeControl(
   parent: HTMLElement,
   labelText: string,

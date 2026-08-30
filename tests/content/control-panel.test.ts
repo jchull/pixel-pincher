@@ -141,6 +141,9 @@ describe("ControlPanel", () => {
     expect(
       elements.some((element) => element.id === "interaction-click-through"),
     ).toBe(false);
+    expect(
+      elements.some((element) => element.classList.contains("position-inputs")),
+    ).toBe(true);
   });
 
   it("moves only from its dedicated handle, persists on pointer-up and lost capture, and cancels on Escape", () => {
