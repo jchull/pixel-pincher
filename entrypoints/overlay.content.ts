@@ -35,6 +35,7 @@ export function startOverlayContent(
       contentWindow.requestAnimationFrame.bind(contentWindow),
     cancelAnimationFrame:
       contentWindow.cancelAnimationFrame.bind(contentWindow),
+    onPlacementChanged: (placement) => panel.updatePlacement(placement),
     onPlacementCommitted: (placement) =>
       send({
         kind: "placement-committed",

@@ -19,6 +19,7 @@ export type OverlayControllerOptions = Readonly<{
   document: Document;
   requestAnimationFrame: (callback: FrameRequestCallback) => number;
   cancelAnimationFrame: (handle: number) => void;
+  onPlacementChanged?: (placement: Placement) => void;
   onPlacementCommitted: (placement: Placement) => void;
   onImageLoadFailed: (referenceId: ReferenceId) => void;
 }>;
@@ -34,6 +35,7 @@ export class OverlayController {
   readonly #window: Window;
   readonly #requestAnimationFrame: OverlayControllerOptions["requestAnimationFrame"];
   readonly #cancelAnimationFrame: OverlayControllerOptions["cancelAnimationFrame"];
+  readonly #onPlacementChanged: OverlayControllerOptions["onPlacementChanged"];
   readonly #onPlacementCommitted: OverlayControllerOptions["onPlacementCommitted"];
   readonly #onImageLoadFailed: OverlayControllerOptions["onImageLoadFailed"];
   readonly #host: HTMLElement;
@@ -51,6 +53,7 @@ export class OverlayController {
     this.#window = options.window;
     this.#requestAnimationFrame = options.requestAnimationFrame;
     this.#cancelAnimationFrame = options.cancelAnimationFrame;
+    this.#onPlacementChanged = options.onPlacementChanged;
     this.#onPlacementCommitted = options.onPlacementCommitted;
     this.#onImageLoadFailed = options.onImageLoadFailed;
     this.#host = findOrCreateHost(options.document);
@@ -233,16 +236,15 @@ export class OverlayController {
       this.#snapshot === undefined
     )
       return;
+    const placement = {
+      x: clampPlacement(drag.placement.x + event.clientX - drag.clientX),
+      y: clampPlacement(drag.placement.y + event.clientY - drag.clientY),
+    };
     this.#snapshot = {
       ...this.#snapshot,
-      settings: {
-        ...this.#snapshot.settings,
-        placement: {
-          x: drag.placement.x + event.clientX - drag.clientX,
-          y: drag.placement.y + event.clientY - drag.clientY,
-        },
-      },
+      settings: { ...this.#snapshot.settings, placement },
     };
+    this.#onPlacementChanged?.(placement);
     event.preventDefault();
     this.#schedulePaint();
   };

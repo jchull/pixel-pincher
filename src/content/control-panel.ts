@@ -15,6 +15,7 @@ import {
   type ImportedReference,
   type OverlaySnapshot,
   type PanelPosition,
+  type Placement,
   type PublicError,
   type SettingsPatch,
   type Sizing,
@@ -159,6 +160,17 @@ export class ControlPanel {
     this.#render();
   }
 
+  updatePlacement(placement: Placement): void {
+    const snapshot = this.#snapshot;
+    if (this.#destroyed || snapshot === undefined) return;
+    this.#snapshot = {
+      ...snapshot,
+      settings: { ...snapshot.settings, placement },
+    };
+    this.#elements.x.value = String(placement.x);
+    this.#elements.y.value = String(placement.y);
+  }
+
   clear(revision: number): void {
     if (this.#destroyed || revision < this.#revision) return;
     this.#revision = revision;
@@ -280,8 +292,10 @@ export class ControlPanel {
   async #importImageUrl(url: URL): Promise<void> {
     try {
       const response = await fetch(url);
-      if (!response.ok) throw new Error(`Image request failed: ${response.status}`);
-      const mimeType = response.headers.get("content-type")?.split(";", 1)[0]?.trim() ?? "";
+      if (!response.ok)
+        throw new Error(`Image request failed: ${response.status}`);
+      const mimeType =
+        response.headers.get("content-type")?.split(";", 1)[0]?.trim() ?? "";
       const bytes = await response.arrayBuffer();
       await this.#importFile(
         new File([bytes], fileNameFromUrl(url), { type: mimeType }),
@@ -909,7 +923,9 @@ function clampScale(value: number): number {
 function parseImageUrl(value: string): URL | undefined {
   try {
     const url = new URL(value.trim());
-    return url.protocol === "http:" || url.protocol === "https:" ? url : undefined;
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url
+      : undefined;
   } catch {
     return undefined;
   }

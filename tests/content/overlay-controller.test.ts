@@ -75,6 +75,7 @@ describe("OverlayController", () => {
   let frame: FrameRequestCallback | undefined;
   let controller: OverlayController;
   let commits: ReturnType<typeof vi.fn>;
+  let moves: ReturnType<typeof vi.fn>;
   let failures: ReturnType<typeof vi.fn>;
   let overlayImage: HTMLImageElement | undefined;
 
@@ -105,6 +106,7 @@ describe("OverlayController", () => {
     );
     frame = undefined;
     commits = vi.fn();
+    moves = vi.fn();
     failures = vi.fn();
     controller = new OverlayController({
       window,
@@ -114,6 +116,7 @@ describe("OverlayController", () => {
         return 1;
       }),
       cancelAnimationFrame: vi.fn(),
+      onPlacementChanged: moves,
       onPlacementCommitted: commits,
       onImageLoadFailed: failures,
     });
@@ -203,6 +206,7 @@ describe("OverlayController", () => {
     overlay.dispatchEvent(
       pointer("pointermove", { pointerId: 1, clientX: 13.6, clientY: 15.2 }),
     );
+    expect(moves).toHaveBeenLastCalledWith({ x: 14, y: 15 });
     overlay.dispatchEvent(
       pointer("pointerup", { pointerId: 1, clientX: 13.6, clientY: 15.2 }),
     );
