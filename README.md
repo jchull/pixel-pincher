@@ -55,10 +55,7 @@ existing reference.
 | Command | Default shortcut | Purpose |
 | --- | --- | --- |
 | Toggle reference visibility | `Alt+Shift+P` | Show or hide the overlay. |
-| Nudge reference left | Unassigned | Move the reference left. |
-| Nudge reference right | Unassigned | Move the reference right. |
-| Nudge reference up | Unassigned | Move the reference up. |
-| Nudge reference down | Unassigned | Move the reference down. |
+
 
 Assign unbound shortcuts under `chrome://extensions/shortcuts`.
 
