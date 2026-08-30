@@ -321,7 +321,15 @@ describe("ControlPanel", () => {
     byId<HTMLButtonElement>("overlay-lock").click();
     const x = byId<HTMLInputElement>("x");
     x.value = "12";
-    x.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    x.dispatchEvent(new Event("input"));
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "update-settings",
+          patch: { kind: "placement", placement: { x: 12, y: 20 } },
+        }),
+      ),
+    );
     const clear = byId<HTMLButtonElement>("clear-site");
     clear.click();
     expect(clear.textContent).toContain("Confirm");

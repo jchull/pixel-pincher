@@ -135,6 +135,8 @@ export class ControlPanel {
     e.scaleNumber.addEventListener("keydown", this.#handleNumberKey);
     e.inverted.addEventListener("change", this.#handleInversion);
     e.lock.addEventListener("click", this.#handleInteraction);
+    e.x.addEventListener("input", this.#handlePlacement);
+    e.y.addEventListener("input", this.#handlePlacement);
     e.x.addEventListener("blur", this.#handlePlacement);
     e.y.addEventListener("blur", this.#handlePlacement);
     e.x.addEventListener("keydown", this.#handleNumberKey);
