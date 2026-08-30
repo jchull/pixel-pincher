@@ -99,6 +99,8 @@
 
 .handle:focus-visible,
 .button:focus-visible,
+.file-drop-target:focus-visible,
+#upload-image:focus-visible,
 input:focus-visible {
   outline: 2px solid #60a5fa;
   outline-offset: -2px;
@@ -151,6 +153,17 @@ input:focus-visible {
 .file-drop-target.dragging {
   border-color: #60a5fa;
   background: rgb(30 58 138 / 35%);
+  color: #dbeafe;
+}
+
+#upload-image {
+  color: #93c5fd;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+#upload-image:hover {
   color: #dbeafe;
 }
 
