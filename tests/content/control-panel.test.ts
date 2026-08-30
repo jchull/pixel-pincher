@@ -345,13 +345,11 @@ describe("ControlPanel", () => {
     });
     dropTarget.dispatchEvent(paste);
     await vi.waitFor(() => expect(importer).toHaveBeenCalledTimes(3));
-    const fetch = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        new Response(new Uint8Array([1, 2, 3]), {
-          headers: { "content-type": "image/png" },
-        }),
-      );
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(new Uint8Array([1, 2, 3]), {
+        headers: { "content-type": "image/png" },
+      }),
+    );
     const urlPaste = new Event("paste", { bubbles: true, cancelable: true });
     Object.defineProperty(urlPaste, "clipboardData", {
       value: {

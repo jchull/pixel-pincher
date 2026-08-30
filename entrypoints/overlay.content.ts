@@ -1,6 +1,9 @@
 import { defineContentScript } from "wxt/utils/define-content-script";
 
-import { ControlPanel, createContentImporter } from "../src/content/control-panel";
+import {
+  ControlPanel,
+  createContentImporter,
+} from "../src/content/control-panel";
 import { OverlayController } from "../src/content/overlay-controller";
 import type { ContentEvent } from "../src/shared/contracts";
 import { parseContentRequestWithPanelPosition } from "../src/shared/panel-position";
@@ -26,7 +29,9 @@ export function startOverlayContent(
     window: contentWindow,
     document: contentWindow.document,
     importReference: createContentImporter(),
-    request(request) { return chrome.runtime.sendMessage(request); },
+    request(request) {
+      return chrome.runtime.sendMessage(request);
+    },
   });
   const controller = new OverlayController({
     window: contentWindow,

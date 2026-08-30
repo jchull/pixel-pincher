@@ -59,15 +59,20 @@ describe("overlay content entrypoint", () => {
 
   beforeEach(() => {
     document.getElementById("pixel-pincher-control-panel")?.remove();
-    Reflect.deleteProperty(window, Symbol.for("pixel-pincher.overlay-controller"));
+    Reflect.deleteProperty(
+      window,
+      Symbol.for("pixel-pincher.overlay-controller"),
+    );
     Reflect.deleteProperty(window, Symbol.for("pixel-pincher.control-panel"));
     buttons = [];
     const createElement = document.createElement.bind(document);
-    vi.spyOn(document, "createElement").mockImplementation((tagName: string) => {
-      const created = createElement(tagName);
-      if (created instanceof HTMLButtonElement) buttons.push(created);
-      return created;
-    });
+    vi.spyOn(document, "createElement").mockImplementation(
+      (tagName: string) => {
+        const created = createElement(tagName);
+        if (created instanceof HTMLButtonElement) buttons.push(created);
+        return created;
+      },
+    );
     listener = undefined;
     sendMessage = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(globalThis, "chrome", {
@@ -87,7 +92,8 @@ describe("overlay content entrypoint", () => {
 
   it("hydrates the in-page panel without rendering arrow move controls", () => {
     startOverlayContent();
-    if (listener === undefined) throw new Error("Expected content message listener.");
+    if (listener === undefined)
+      throw new Error("Expected content message listener.");
     listener(hydrationMessage());
 
     expect(sendMessage).toHaveBeenNthCalledWith(1, {

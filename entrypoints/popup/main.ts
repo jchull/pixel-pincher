@@ -132,7 +132,10 @@ function attach(root: HTMLElement, controller: PopupController): void {
         : "Show in-page controls";
     });
     togglePanel.addEventListener("click", async () => {
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tabs = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
       const tabId = tabs[0]?.id;
       if (tabId === undefined) return;
       const result = await chrome.scripting.executeScript({

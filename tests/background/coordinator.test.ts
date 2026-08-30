@@ -112,18 +112,14 @@ function createCoordinator(
   const repository = {
     cleanupOrphans: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
     clearOrigin: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
-    readHydration: vi
-      .fn()
-      .mockImplementation(async () => ({
-        ok: true as const,
-        value: hydration(),
-      })),
-    readSnapshot: vi
-      .fn()
-      .mockImplementation(async () => ({
-        ok: true as const,
-        value: currentSnapshot,
-      })),
+    readHydration: vi.fn().mockImplementation(async () => ({
+      ok: true as const,
+      value: hydration(),
+    })),
+    readSnapshot: vi.fn().mockImplementation(async () => ({
+      ok: true as const,
+      value: currentSnapshot,
+    })),
     replaceReference: vi
       .fn()
       .mockImplementation(

@@ -1,10 +1,10 @@
-import { defineConfig } from 'wxt';
+import { defineConfig } from "wxt";
 
 export default defineConfig({
   outDir: "dist",
   manifest: {
-    name: 'Pixel Pincher',
-    description: 'Overlay and compare reference images on web pages.',
+    name: "Pixel Pincher",
+    description: "Overlay and compare reference images on web pages.",
     icons: {
       16: "/icon/16.png",
       32: "/icon/32.png",
@@ -19,11 +19,12 @@ export default defineConfig({
         128: "/icon/128.png",
       },
     },
-    incognito: 'not_allowed',
     content_security_policy: {
-      extension_pages: "script-src 'self'; object-src 'self'; img-src 'self' blob: data:",
+      extension_pages:
+        "script-src 'self'; object-src 'self'; img-src 'self' blob: data:",
     },
-    optional_host_permissions: ['http://*/*', 'https://*/*'],
+    incognito: "not_allowed",
+    optional_host_permissions: ["http://*/*", "https://*/*"],
     commands: {
       "toggle-visibility": {
         description: "Toggle reference visibility",
@@ -35,11 +36,11 @@ export default defineConfig({
       "nudge-down": { description: "Nudge reference down" },
     },
     permissions: [
-      'activeTab',
-      'storage',
-      'unlimitedStorage',
-      'scripting',
-      'webNavigation',
+      "activeTab",
+      "storage",
+      "unlimitedStorage",
+      "scripting",
+      "webNavigation",
     ],
   },
 });

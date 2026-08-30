@@ -12,7 +12,11 @@ import {
 } from "../shared/contracts";
 
 /** The minimal File-shaped fields the import path needs from a picked file. */
-export type ImportFileLike = Readonly<{ name: string; type: string; size: number }>;
+export type ImportFileLike = Readonly<{
+  name: string;
+  type: string;
+  size: number;
+}>;
 
 export type ImportedDimensions = Readonly<{ width: number; height: number }>;
 
@@ -23,17 +27,22 @@ export type ImportedDimensions = Readonly<{ width: number; height: number }>;
  */
 export type ImportDependencies = Readonly<{
   readFile(file: ImportFileLike): Promise<Uint8Array>;
-  decodeImage(bytes: Uint8Array, mimeType: MimeType): Promise<ImportedDimensions>;
+  decodeImage(
+    bytes: Uint8Array,
+    mimeType: MimeType,
+  ): Promise<ImportedDimensions>;
   randomReferenceId(): string;
   currentTimestamp(): number;
 }>;
 
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const UUID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const;
 const JPEG_MAGIC = [0xff, 0xd8, 0xff] as const;
 const RIFF_MAGIC = [0x52, 0x49, 0x46, 0x46] as const;
 const WEBP_MAGIC = [0x57, 0x45, 0x42, 0x50] as const;
-const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const BASE64_ALPHABET =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const BASE64_FLUSH_CHARS = 32_768;
 /**
  * The widest `data:<mime>;base64,` prefix among the supported types
@@ -60,7 +69,11 @@ function decodeError(): ImportError {
   return new AppError("image-decode-failed");
 }
 
-function hasMagicAt(bytes: Uint8Array, magic: readonly number[], offset: number): boolean {
+function hasMagicAt(
+  bytes: Uint8Array,
+  magic: readonly number[],
+  offset: number,
+): boolean {
   if (bytes.byteLength < magic.length + offset) return false;
   return magic.every((byte, index) => bytes[offset + index] === byte);
 }
@@ -72,12 +85,16 @@ function hasMagicAt(bytes: Uint8Array, magic: readonly number[], offset: number)
 function sniffImageMimeType(bytes: Uint8Array): MimeType | null {
   if (hasMagicAt(bytes, PNG_MAGIC, 0)) return "image/png";
   if (hasMagicAt(bytes, JPEG_MAGIC, 0)) return "image/jpeg";
-  if (hasMagicAt(bytes, RIFF_MAGIC, 0) && hasMagicAt(bytes, WEBP_MAGIC, 8)) return "image/webp";
+  if (hasMagicAt(bytes, RIFF_MAGIC, 0) && hasMagicAt(bytes, WEBP_MAGIC, 8))
+    return "image/webp";
   return looksLikeSvg(bytes) ? "image/svg+xml" : null;
 }
 
 function looksLikeSvg(bytes: Uint8Array): boolean {
-  const window = new TextDecoder("utf-8").decode(bytes.subarray(0, SVG_SCAN_BYTES), { stream: true });
+  const window = new TextDecoder("utf-8").decode(
+    bytes.subarray(0, SVG_SCAN_BYTES),
+    { stream: true },
+  );
   let text = window;
   for (;;) {
     const trimmed = text.replace(/^\s+/, "");
@@ -156,7 +173,10 @@ function base64Encode(bytes: Uint8Array): string {
   const remainder = total - fullGroups * 3;
   if (remainder === 1) {
     const value = bytes[fullGroups * 3] << 16;
-    current += BASE64_ALPHABET[(value >> 18) & 63] + BASE64_ALPHABET[(value >> 12) & 63] + "==";
+    current +=
+      BASE64_ALPHABET[(value >> 18) & 63] +
+      BASE64_ALPHABET[(value >> 12) & 63] +
+      "==";
   } else if (remainder === 2) {
     const offset = fullGroups * 3;
     const value = (bytes[offset] << 16) | (bytes[offset + 1] << 8);
@@ -194,15 +214,19 @@ async function decodeImageSafely(
   }
 }
 
-function isValidDimensions(dimensions: ImportedDimensions | null): dimensions is ImportedDimensions {
+function isValidDimensions(
+  dimensions: ImportedDimensions | null,
+): dimensions is ImportedDimensions {
   if (dimensions === null) return false;
   const { width, height } = dimensions;
-  return Number.isSafeInteger(width) &&
+  return (
+    Number.isSafeInteger(width) &&
     Number.isSafeInteger(height) &&
     width > 0 &&
     height > 0 &&
     width <= MAX_IMAGE_PIXELS &&
-    height <= MAX_IMAGE_PIXELS;
+    height <= MAX_IMAGE_PIXELS
+  );
 }
 
 /**
@@ -220,29 +244,48 @@ export function createImportReference(deps: ImportDependencies) {
   return async function importReference(
     file: ImportFileLike,
   ): Promise<Result<ImportedReference, ImportError>> {
-    if (typeof file !== "object" || file === null || typeof file.name !== "string" ||
-      file.name.length === 0 || typeof file.type !== "string" ||
-      typeof file.size !== "number" || !Number.isSafeInteger(file.size) || file.size < 0) {
+    if (
+      typeof file !== "object" ||
+      file === null ||
+      typeof file.name !== "string" ||
+      file.name.length === 0 ||
+      typeof file.type !== "string" ||
+      typeof file.size !== "number" ||
+      !Number.isSafeInteger(file.size) ||
+      file.size < 0
+    ) {
       return { ok: false, error: typeError() };
     }
 
     // base64 expands every 3 input bytes to 4 characters; reject files whose
     // encoded form cannot fit the limit before any bytes are allocated.
-    if (file.size > MAX_IMAGE_RAW_BYTES || DATA_URL_PREFIX_BYTES + Math.ceil(file.size / 3) * 4 > MAX_IMAGE_ENCODED_BYTES) {
+    if (
+      file.size > MAX_IMAGE_RAW_BYTES ||
+      DATA_URL_PREFIX_BYTES + Math.ceil(file.size / 3) * 4 >
+        MAX_IMAGE_ENCODED_BYTES
+    ) {
       return { ok: false, error: tooLargeError() };
     }
 
     const bytes = await readFileSafely(deps.readFile, file);
     if (bytes === null) return { ok: false, error: decodeError() };
-    if (bytes.byteLength !== file.size) return { ok: false, error: decodeError() };
+    if (bytes.byteLength !== file.size)
+      return { ok: false, error: decodeError() };
 
     const detected = sniffImageMimeType(bytes);
     if (detected === null) return { ok: false, error: typeError() };
-    if (file.type.trim().toLowerCase() !== detected) return { ok: false, error: typeError() };
-    if (bytes.byteLength > MAX_IMAGE_RAW_BYTES) return { ok: false, error: tooLargeError() };
+    if (file.type.trim().toLowerCase() !== detected)
+      return { ok: false, error: typeError() };
+    if (bytes.byteLength > MAX_IMAGE_RAW_BYTES)
+      return { ok: false, error: tooLargeError() };
 
-    const dimensions = await decodeImageSafely(deps.decodeImage, bytes, detected);
-    if (!isValidDimensions(dimensions)) return { ok: false, error: decodeError() };
+    const dimensions = await decodeImageSafely(
+      deps.decodeImage,
+      bytes,
+      detected,
+    );
+    if (!isValidDimensions(dimensions))
+      return { ok: false, error: decodeError() };
     if (dimensions.width * dimensions.height > MAX_IMAGE_PIXELS) {
       return { ok: false, error: tooManyPixelsError() };
     }
@@ -250,11 +293,13 @@ export function createImportReference(deps: ImportDependencies) {
     const id = deps.randomReferenceId();
     if (!UUID_V4.test(id)) return { ok: false, error: decodeError() };
     const importedAt = deps.currentTimestamp();
-    if (!Number.isSafeInteger(importedAt) || importedAt < 0) return { ok: false, error: decodeError() };
+    if (!Number.isSafeInteger(importedAt) || importedAt < 0)
+      return { ok: false, error: decodeError() };
 
     const dataUrl = `data:${detected};base64,${base64Encode(bytes)}`;
     const encodedBytes = dataUrl.length;
-    if (encodedBytes > MAX_IMAGE_ENCODED_BYTES) return { ok: false, error: tooLargeError() };
+    if (encodedBytes > MAX_IMAGE_ENCODED_BYTES)
+      return { ok: false, error: tooLargeError() };
 
     const metadata: ReferenceMetadata = {
       id: id as ReferenceId,

@@ -466,8 +466,13 @@ export class BackgroundCoordinator {
         return failure(request.requestId, new AppError("invalid-request"));
       const hydration = await this.#repository.readHydration(requested.value);
       if (!hydration.ok) return failure(request.requestId, hydration.error);
-      const delivered = await this.#deliverHydration(active.id, requested.value, hydration.value);
-      if (!delivered.ok) return failure(request.requestId, deliveryFailure(delivered));
+      const delivered = await this.#deliverHydration(
+        active.id,
+        requested.value,
+        hydration.value,
+      );
+      if (!delivered.ok)
+        return failure(request.requestId, deliveryFailure(delivered));
       return success(request.requestId, hydration.value.snapshot);
     }
 
