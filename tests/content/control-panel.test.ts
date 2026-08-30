@@ -132,15 +132,11 @@ describe("ControlPanel", () => {
     ).toBe("polite");
     expect(buttons.some((button) => button.id.startsWith("move-"))).toBe(false);
     expect(buttons.some((button) => button.id === "reset-scale")).toBe(false);
-    const dragToggle = elements.find(
-      (element) => element.id === "interaction-drag",
-    );
-    if (!(dragToggle instanceof HTMLInputElement))
-      throw new Error("Expected drag toggle.");
-    expect(dragToggle.type).toBe("checkbox");
-    expect(
-      elements.some((element) => element.id === "interaction-click-through"),
-    ).toBe(false);
+    const lockToggle = elements.find((element) => element.id === "overlay-lock");
+    if (!(lockToggle instanceof HTMLInputElement))
+      throw new Error("Expected overlay lock toggle.");
+    expect(lockToggle.type).toBe("checkbox");
+    expect(lockToggle.checked).toBe(true);
     expect(
       elements.some((element) => element.classList.contains("position-inputs")),
     ).toBe(true);
@@ -293,7 +289,7 @@ describe("ControlPanel", () => {
     byId<HTMLInputElement>("visible").click();
     byId<HTMLInputElement>("fit-width").click();
     byId<HTMLInputElement>("inverted").click();
-    byId<HTMLInputElement>("interaction-drag").click();
+    byId<HTMLInputElement>("overlay-lock").click();
     const x = byId<HTMLInputElement>("x");
     x.value = "12";
     x.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
@@ -308,12 +304,16 @@ describe("ControlPanel", () => {
     );
     const dropped = new File(["drop"], "dropped.png", { type: "image/png" });
     const drop = new Event("drop", { bubbles: true, cancelable: true });
-    Object.defineProperty(drop, "dataTransfer", { value: { files: [dropped] } });
+    Object.defineProperty(drop, "dataTransfer", {
+      value: { files: [dropped] },
+    });
     dropTarget.dispatchEvent(drop);
     await vi.waitFor(() => expect(importer).toHaveBeenCalledTimes(2));
     const pasted = new File(["paste"], "pasted.png", { type: "image/png" });
     const paste = new Event("paste", { bubbles: true, cancelable: true });
-    Object.defineProperty(paste, "clipboardData", { value: { files: [pasted] } });
+    Object.defineProperty(paste, "clipboardData", {
+      value: { files: [pasted] },
+    });
     dropTarget.dispatchEvent(paste);
     await vi.waitFor(() => expect(importer).toHaveBeenCalledTimes(3));
   });

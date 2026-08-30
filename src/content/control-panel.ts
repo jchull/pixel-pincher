@@ -69,7 +69,7 @@ type PanelElements = Readonly<{
   scale: HTMLInputElement;
   scaleNumber: HTMLInputElement;
   inverted: HTMLInputElement;
-  drag: HTMLInputElement;
+  lock: HTMLInputElement;
   x: HTMLInputElement;
   y: HTMLInputElement;
   clear: HTMLButtonElement;
@@ -126,7 +126,7 @@ export class ControlPanel {
     e.scaleNumber.addEventListener("input", this.#handleScaleNumber);
     e.scaleNumber.addEventListener("keydown", this.#handleNumberKey);
     e.inverted.addEventListener("change", this.#handleInversion);
-    e.drag.addEventListener("change", this.#handleInteraction);
+    e.lock.addEventListener("change", this.#handleInteraction);
     e.x.addEventListener("blur", this.#handlePlacement);
     e.y.addEventListener("blur", this.#handlePlacement);
     e.x.addEventListener("keydown", this.#handleNumberKey);
@@ -185,7 +185,7 @@ export class ControlPanel {
     e.scale.disabled = disabled || settings.sizing.kind === "fit-width";
     e.scaleNumber.disabled = disabled || settings.sizing.kind === "fit-width";
     e.inverted.checked = settings.inverted;
-    e.drag.checked = settings.interactionMode === "drag";
+    e.lock.checked = settings.interactionMode === "click-through";
     e.x.value = String(settings.placement.x);
     e.y.value = String(settings.placement.y);
     for (const control of [
@@ -194,7 +194,7 @@ export class ControlPanel {
       e.opacityNumber,
       e.fitWidth,
       e.inverted,
-      e.drag,
+      e.lock,
       e.x,
       e.y,
     ])
@@ -328,7 +328,7 @@ export class ControlPanel {
   #handleInteraction = (): void =>
     this.#queueSetting({
       kind: "interaction-mode",
-      interactionMode: this.#elements.drag.checked ? "drag" : "click-through",
+      interactionMode: this.#elements.lock.checked ? "click-through" : "drag",
     });
   #handlePlacement = (event: Event): void => {
     const input = event.currentTarget;
@@ -629,12 +629,12 @@ function findOrCreatePanel(
     MAX_SCALE_PERCENT,
   );
   const inverted = checkbox(document, "inverted", "Invert colors");
-  const drag = checkbox(document, "interaction-drag", "Drag overlay");
+  const lock = checkbox(document, "overlay-lock", "🔒 Lock");
   const x = number(document, "x", MIN_PLACEMENT, MAX_PLACEMENT);
   const y = number(document, "y", MIN_PLACEMENT, MAX_PLACEMENT);
   const quickControls = document.createElement("div");
   quickControls.className = "quick-controls";
-  quickControls.append(visible.parentElement!, drag.parentElement!);
+  quickControls.append(visible.parentElement!, lock.parentElement!);
   appendRangeControl(controls, "Opacity", opacity, opacityNumber);
   appendRangeControl(controls, "Scale", scale, scaleNumber);
   appendPositionControls(controls, x, y);
@@ -648,7 +648,15 @@ function findOrCreatePanel(
   live.className = "live";
   live.setAttribute("role", "status");
   live.setAttribute("aria-live", "polite");
-  content.append(file, fileDropTarget, quickControls, controls, clear, confirm, live);
+  content.append(
+    file,
+    fileDropTarget,
+    quickControls,
+    controls,
+    clear,
+    confirm,
+    live,
+  );
   panel.append(handle, content);
   root.append(style, panel);
   return {
@@ -663,7 +671,7 @@ function findOrCreatePanel(
     scale,
     scaleNumber,
     inverted,
-    drag,
+    lock,
     x,
     y,
     clear,
