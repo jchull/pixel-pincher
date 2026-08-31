@@ -111,7 +111,7 @@ function createCoordinator(
         };
   const repository = {
     cleanupOrphans: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
-    clearOrigin: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
+    purgeOrigin: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
     readHydration: vi.fn().mockImplementation(async () => ({
       ok: true as const,
       value: hydration(),
@@ -267,7 +267,7 @@ describe("BackgroundCoordinator", () => {
 
     expect(harness.repository.replaceReference).toHaveBeenCalledOnce();
     expect(harness.repository.updateSettings).toHaveBeenCalledOnce();
-    expect(harness.repository.clearOrigin).toHaveBeenCalledOnce();
+    expect(harness.repository.purgeOrigin).toHaveBeenCalledOnce();
     expect(harness.siteAccess.ensureForUrl).toHaveBeenCalledOnce();
     expect(harness.siteAccess.injectForUrl).toHaveBeenCalledTimes(2);
     const [openedUrl, openedTabId] =
@@ -405,7 +405,7 @@ describe("BackgroundCoordinator", () => {
     });
   });
 
-  it("clears corrupt stored data by reaching clearOrigin and still delivers a clear", async () => {
+  it("clears corrupt stored data by reaching purgeOrigin and still delivers a clear", async () => {
     const harness = createCoordinator();
     harness.repository.readSnapshot.mockResolvedValue({
       ok: false,
@@ -419,7 +419,7 @@ describe("BackgroundCoordinator", () => {
         url: pageUrl,
       }),
     ).resolves.toEqual({ requestId: "corrupt", ok: true, value: undefined });
-    expect(harness.repository.clearOrigin).toHaveBeenCalledOnce();
+    expect(harness.repository.purgeOrigin).toHaveBeenCalledOnce();
     expect(harness.siteAccess.unregisterOrigin).toHaveBeenCalledOnce();
     expect(harness.send).toHaveBeenCalledWith(9, {
       kind: "clear-overlay",
@@ -441,7 +441,7 @@ describe("BackgroundCoordinator", () => {
       ok: false,
       error: { code: "storage-failed" },
     });
-    expect(storageFailed.repository.clearOrigin).not.toHaveBeenCalled();
+    expect(storageFailed.repository.purgeOrigin).not.toHaveBeenCalled();
   });
 
   it("requires current site access before content mutations and only retains matching image diagnostics", async () => {
@@ -561,7 +561,7 @@ describe("BackgroundCoordinator", () => {
     expect(harness.repository.replaceReference).toHaveBeenCalledWith(
       expect.objectContaining({ url: new URL(pageUrl), reference: imported }),
     );
-    expect(harness.repository.clearOrigin).toHaveBeenCalledOnce();
+    expect(harness.repository.purgeOrigin).toHaveBeenCalledOnce();
     expect(harness.siteAccess.unregisterOrigin).toHaveBeenCalledOnce();
   });
 

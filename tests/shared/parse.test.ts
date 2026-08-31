@@ -14,6 +14,7 @@ import {
   parseOverlaySnapshot,
   parseImageRecordV1,
   parseOriginIndexV1,
+  parseOriginIndexV2,
   parseOriginRecordV1,
   parseOverlaySettings,
   parsePageKey,
@@ -306,6 +307,32 @@ describe("boundary parsers", () => {
       parseOriginIndexV1({
         schemaVersion: 1,
         origins: ["https://example.com", "https://example.com"],
+      }).ok,
+    ).toBe(false);
+    expect(
+      parseOriginIndexV2({
+        schemaVersion: 2,
+        origins: [
+          { origin: "https://example.com", referenceId: id },
+        ],
+        imageIds: [id],
+      }).ok,
+    ).toBe(true);
+    expect(
+      parseOriginIndexV2({
+        schemaVersion: 2,
+        origins: [
+          { origin: "https://example.com", referenceId: id },
+          { origin: "https://other.example", referenceId: id },
+        ],
+        imageIds: [id],
+      }).ok,
+    ).toBe(false);
+    expect(
+      parseOriginIndexV2({
+        schemaVersion: 2,
+        origins: [{ origin: "https://example.com", referenceId: null }],
+        imageIds: [id, id],
       }).ok,
     ).toBe(false);
   });

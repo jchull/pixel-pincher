@@ -528,7 +528,7 @@ describe("import-reference", () => {
         cleanupOrphans: vi
           .fn()
           .mockResolvedValue({ ok: true, value: undefined }),
-        clearOrigin: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
+        purgeOrigin: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
         readHydration: vi
           .fn()
           .mockImplementation(async () => ({

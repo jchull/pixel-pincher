@@ -16,9 +16,9 @@ import {
   toPublicError,
 } from "../shared/contracts";
 import { deriveOrigin, derivePageKey } from "../shared/keys";
-import { parseSupportedUrl } from "../shared/parse";
+import { parseOrigin, parseSupportedUrl } from "../shared/parse";
 import type { OverlayRepository } from "./repository";
-import type { SiteAccessService } from "./site-access";
+import { originFromMatch, type SiteAccessService } from "./site-access";
 import { sameCanonicalPage, TabMessenger, type TabPage } from "./tab-messenger";
 import type { PixelPincherCommand } from "./commands";
 import type { TopFrameNavigation } from "./navigation";
@@ -33,7 +33,7 @@ export type ContentSender = Readonly<{
 type Repository = Pick<
   OverlayRepository,
   | "cleanupOrphans"
-  | "clearOrigin"
+  | "purgeOrigin"
   | "readHydration"
   | "readSnapshot"
   | "replaceReference"
@@ -161,7 +161,14 @@ export class BackgroundCoordinator {
   }
 
   async handlePermissionsRemoved(origins: readonly string[]): Promise<void> {
-    const removed = new Set(origins);
+    const removed = new Set(
+      origins.flatMap((match) => {
+        const matchedOrigin = originFromMatch(match);
+        if (matchedOrigin !== undefined) return [matchedOrigin];
+        const directOrigin = parseOrigin(match);
+        return directOrigin.ok ? [directOrigin.value] : [];
+      }),
+    );
     if (removed.size > 0) {
       try {
         const tabs = await this.#tabs.getTabs();
@@ -181,6 +188,13 @@ export class BackgroundCoordinator {
         // Permission removal cleanup is best effort; reconciliation still runs.
       }
     }
+    // The permission event supplies an exact origin even when its index is corrupt,
+    // so deletion must not depend on startup reconciliation discovering it.
+    await Promise.all(
+      [...removed].map((origin) =>
+        this.#repository.purgeOrigin(origin).catch(() => undefined),
+      ),
+    );
     await this.startup();
   }
 
@@ -376,7 +390,7 @@ export class BackgroundCoordinator {
               request.requestId,
               new AppError("invalid-stored-data"),
             );
-          const cleared = await this.#repository.clearOrigin(origin);
+          const cleared = await this.#repository.purgeOrigin(origin);
           if (!cleared.ok) return failure(request.requestId, cleared.error);
           const unregistered = await this.#siteAccess.unregisterOrigin(origin);
           if (!unregistered.ok)
@@ -494,7 +508,7 @@ export class BackgroundCoordinator {
         return failure(request.requestId, new AppError("invalid-stored-data"));
       if (!(await this.#sameActiveTab(active)))
         return failure(request.requestId, new AppError("invalid-request"));
-      const cleared = await this.#repository.clearOrigin(origin);
+      const cleared = await this.#repository.purgeOrigin(origin);
       if (!cleared.ok) return failure(request.requestId, cleared.error);
       this.#diagnostics.delete(active.id);
       if (!(await this.#sameActiveTab(active)))

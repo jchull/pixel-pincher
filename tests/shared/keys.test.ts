@@ -4,6 +4,7 @@ import {
   deriveOrigin,
   derivePageKey,
   imageRecordKey,
+  isImageRecordKey,
   ORIGIN_INDEX_KEY,
   originRecordKey,
   pageRecordKey,
@@ -42,5 +43,7 @@ describe("storage keys", () => {
     expect(originRecordKey(origin)).toBe("pixel-pincher:origin:https%3A%2F%2Fexample.com%3A8443");
     expect(pageRecordKey(pageKey)).toBe("pixel-pincher:page:https%3A%2F%2Fexample.com%3A8443%2Fpath%3Fq%3Da%26x%3Db");
     expect(imageRecordKey(referenceId)).toBe("pixel-pincher:image:123e4567-e89b-42d3-a456-426614174000");
+    expect(isImageRecordKey(imageRecordKey(referenceId))).toBe(true);
+    expect(isImageRecordKey("pixel-pincher:origin:not-an-image")).toBe(false);
   });
 });

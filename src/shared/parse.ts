@@ -10,6 +10,7 @@ import {
   type Origin,
   type MimeType,
   type OriginIndexV1,
+  type OriginIndexV2,
   type OriginRecordV1,
   type OverlaySettings,
   type OverlaySnapshot,
@@ -1036,4 +1037,58 @@ export function parseOriginIndexV1(
     origins.push(origin.value);
   }
   return { ok: true, value: { schemaVersion: 1, origins } };
+}
+
+/** Parses the canonical metadata-only ownership index. */
+export function parseOriginIndexV2(
+  value: unknown,
+): Result<OriginIndexV2, PublicError> {
+  if (
+    !isOwnDataRecord(value) ||
+    !hasExactKeys(value, ["schemaVersion", "origins", "imageIds"]) ||
+    value.schemaVersion !== 2 ||
+    !Array.isArray(value.origins) ||
+    !Array.isArray(value.imageIds)
+  ) {
+    return failure("invalid-stored-data");
+  }
+
+  const origins: OriginIndexV2["origins"][number][] = [];
+  const ownedImageIds = new Set<ReferenceId>();
+  let previousOrigin: Origin | undefined;
+  for (const entry of value.origins) {
+    if (!isOwnDataRecord(entry) || !hasExactKeys(entry, ["origin", "referenceId"]))
+      return failure("invalid-stored-data");
+    const origin = parseOrigin(entry.origin);
+    const referenceId =
+      entry.referenceId === null
+        ? { ok: true as const, value: null }
+        : parseReferenceId(entry.referenceId);
+    if (
+      !origin.ok ||
+      !referenceId.ok ||
+      (previousOrigin !== undefined && previousOrigin >= origin.value) ||
+      (referenceId.value !== null && ownedImageIds.has(referenceId.value))
+    ) {
+      return failure("invalid-stored-data");
+    }
+    if (referenceId.value !== null) ownedImageIds.add(referenceId.value);
+    origins.push({ origin: origin.value, referenceId: referenceId.value });
+    previousOrigin = origin.value;
+  }
+
+  const imageIds: ReferenceId[] = [];
+  let previousImageId: ReferenceId | undefined;
+  for (const imageIdValue of value.imageIds) {
+    const imageId = parseReferenceId(imageIdValue);
+    if (
+      !imageId.ok ||
+      (previousImageId !== undefined && previousImageId >= imageId.value)
+    ) {
+      return failure("invalid-stored-data");
+    }
+    imageIds.push(imageId.value);
+    previousImageId = imageId.value;
+  }
+  return { ok: true, value: { schemaVersion: 2, origins, imageIds } };
 }

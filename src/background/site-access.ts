@@ -108,10 +108,10 @@ export async function registrationForOrigin(origin: Origin): Promise<RuntimeRegi
 /** Optional-host access and runtime-content-script lifecycle. Popup permission prompts stay outside this service. */
 export class SiteAccessService {
   readonly #adapter: SiteAccessAdapter;
-  readonly #repository: Pick<OverlayRepository, "clearOrigin" | "listOrigins">;
+  readonly #repository: Pick<OverlayRepository, "purgeOrigin" | "listOrigins">;
   #operation: Promise<void> = Promise.resolve();
 
-  constructor(adapter: SiteAccessAdapter, repository: Pick<OverlayRepository, "clearOrigin" | "listOrigins">) {
+  constructor(adapter: SiteAccessAdapter, repository: Pick<OverlayRepository, "purgeOrigin" | "listOrigins">) {
     this.#adapter = adapter;
     this.#repository = repository;
   }
@@ -189,7 +189,7 @@ export class SiteAccessService {
             // Both operations are attempted even when the other fails so revocation
             // cannot leave storage behind because a registration is already absent/bad.
             rememberFailure(await this.#unregisterOrigin(origin));
-            const cleared = await this.#repository.clearOrigin(origin);
+            const cleared = await this.#repository.purgeOrigin(origin);
             if (!cleared.ok && firstFailure === undefined) firstFailure = accessFailure("content-unavailable");
           }
         }

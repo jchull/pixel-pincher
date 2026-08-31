@@ -14,7 +14,13 @@ import {
   registrationForOrigin,
   registrationIdForOrigin,
 } from "../../src/background/site-access";
-import { deriveOrigin } from "../../src/shared/keys";
+import {
+  deriveOrigin,
+  imageRecordKey,
+  ORIGIN_INDEX_KEY,
+  originRecordKey,
+} from "../../src/shared/keys";
+import { parseReferenceId } from "../../src/shared/parse";
 
 class MemoryStorage implements StorageAdapter {
   readonly values = new Map<string, unknown>();
@@ -254,8 +260,8 @@ describe("SiteAccessService", () => {
     };
     adapter.grants.add("https://example.com/*");
     adapter.registrations.push(unrelated);
-    const repository: Pick<OverlayRepository, "clearOrigin" | "listOrigins"> = {
-      async clearOrigin() { return { ok: true, value: undefined }; },
+    const repository: Pick<OverlayRepository, "purgeOrigin" | "listOrigins"> = {
+      async purgeOrigin() { return { ok: true, value: undefined }; },
       async listOrigins() { return { ok: true, value: [origin, origin] }; },
     };
     const service = new SiteAccessService(adapter, repository);
@@ -401,8 +407,8 @@ describe("SiteAccessService", () => {
     adapter.unregisterFails = true;
     adapter.unregisterLeavesRegistration = true;
     const cleared: Origin[] = [];
-    const repository: Pick<OverlayRepository, "clearOrigin" | "listOrigins"> = {
-      async clearOrigin(value) {
+    const repository: Pick<OverlayRepository, "purgeOrigin" | "listOrigins"> = {
+      async purgeOrigin(value) {
         cleared.push(value);
         return { ok: true, value: undefined };
       },
@@ -422,8 +428,8 @@ describe("SiteAccessService", () => {
     const first = getOrigin(new URL("https://first.example/page"));
     const second = getOrigin(new URL("https://second.example/page"));
     const cleared: Origin[] = [];
-    const repository: Pick<OverlayRepository, "clearOrigin" | "listOrigins"> = {
-      async clearOrigin(origin) {
+    const repository: Pick<OverlayRepository, "purgeOrigin" | "listOrigins"> = {
+      async purgeOrigin(origin) {
         cleared.push(origin);
         return origin === first
           ? { ok: false as const, error: new AppError("storage-failed") }
@@ -455,8 +461,8 @@ describe("SiteAccessService", () => {
     const url = new URL("https://example.com/page");
     const origin = getOrigin(url);
     adapter.grants.add("https://example.com/*");
-    const repository: Pick<OverlayRepository, "clearOrigin" | "listOrigins"> = {
-      async clearOrigin() { return { ok: true, value: undefined }; },
+    const repository: Pick<OverlayRepository, "purgeOrigin" | "listOrigins"> = {
+      async purgeOrigin() { return { ok: true, value: undefined }; },
       async listOrigins() { return { ok: true, value: [origin] }; },
     };
     const service = new SiteAccessService(adapter, repository);
@@ -472,6 +478,33 @@ describe("SiteAccessService", () => {
     expect(injected.ok).toBe(true);
     expect(adapter.maxActiveContains).toBe(1);
     expect(adapter.injected).toEqual([{ files: ["content-scripts/overlay.js"], tabId: 7 }]);
+  });
+
+  it("purges corrupt target data after permission revocation", async () => {
+    const adapter = new FakeSiteAccessAdapter();
+    const storage = new MemoryStorage();
+    const target = getOrigin(new URL("https://revoked.example/page"));
+    const parsedReferenceId = parseReferenceId(
+      "123e4567-e89b-42d3-a456-426614174050",
+    );
+    if (!parsedReferenceId.ok) throw new Error("Test reference ID must parse.");
+    const referenceId = parsedReferenceId.value;
+    storage.values.set(ORIGIN_INDEX_KEY, {
+      schemaVersion: 2,
+      origins: [{ origin: target, referenceId }],
+      imageIds: [referenceId],
+    });
+    storage.values.set(originRecordKey(target), { corrupt: true });
+    storage.values.set(imageRecordKey(referenceId), {
+      schemaVersion: 1,
+      referenceId,
+      dataUrl: "data:image/png;base64,aGVsbG8=",
+    });
+    const service = new SiteAccessService(adapter, new OverlayRepository(storage));
+
+    await expect(service.reconcile()).resolves.toEqual({ ok: true, value: undefined });
+    expect(storage.values.get(originRecordKey(target))).toBeUndefined();
+    expect(storage.values.get(imageRecordKey(referenceId))).toBeUndefined();
   });
 
   it("removes malformed and revoked managed registrations", async () => {

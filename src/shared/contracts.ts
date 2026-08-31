@@ -101,6 +101,18 @@ export type OriginIndexV1 = Readonly<{
   origins: readonly Origin[];
 }>;
 
+/** Indexes origin ownership without materializing stored image payloads. */
+export type OriginIndexV2Entry = Readonly<{
+  origin: Origin;
+  referenceId: ReferenceId | null;
+}>;
+
+export type OriginIndexV2 = Readonly<{
+  schemaVersion: 2;
+  origins: readonly OriginIndexV2Entry[];
+  imageIds: readonly ReferenceId[];
+}>;
+
 export type SettingsPatch =
   | Readonly<{ kind: "visibility"; visible: boolean }>
   | Readonly<{ kind: "opacity"; opacity: number }>
