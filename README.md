@@ -1,6 +1,6 @@
 # Pixel Pincher
 
-Pixel Pincher is a Chromium extension for aligning a reference image with a live web page. It keeps the reference over the page while you adjust its placement, opacity, scale, and interaction mode.
+Pixel Pincher is a Chromium extension for aligning a reference image with a live web page. It keeps the reference over the page while you adjust its placement, opacity, scale, and interaction mode. I built this to solve a problem for myself. I ask for no donations, no adware, no spam. Enjoy, and contributions are welcome. 
 
 ## Features
 
