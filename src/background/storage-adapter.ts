@@ -1,5 +1,7 @@
 export interface StorageAdapter {
   get(keys: readonly string[]): Promise<Readonly<Record<string, unknown>>>;
+  /** Lists names without materializing values for targeted legacy-key deletion. */
+  getKeys(): Promise<readonly string[]>;
   /** Reserved for one-time index migration and deletion-only purge recovery. */
   readAll(): Promise<Readonly<Record<string, unknown>>>;
   set(values: Readonly<Record<string, unknown>>): Promise<void>;
@@ -7,14 +9,17 @@ export interface StorageAdapter {
 }
 
 export class StorageAdapterError extends Error {
-  constructor(operation: "get" | "read-all" | "set" | "remove", cause: unknown) {
+  constructor(
+    operation: "get" | "get-keys" | "read-all" | "set" | "remove",
+    cause: unknown,
+  ) {
     super(`Chrome storage ${operation} failed.`, { cause });
     this.name = "StorageAdapterError";
   }
 }
 
 async function wrapStorageOperation<T>(
-  operation: "get" | "read-all" | "set" | "remove",
+  operation: "get" | "get-keys" | "read-all" | "set" | "remove",
   action: () => Promise<T>,
 ): Promise<T> {
   try {
@@ -29,6 +34,9 @@ export function createChromeStorageAdapter(): StorageAdapter {
   return {
     get(keys) {
       return wrapStorageOperation("get", () => chrome.storage.local.get([...keys]));
+    },
+    getKeys() {
+      return wrapStorageOperation("get-keys", () => chrome.storage.local.getKeys());
     },
     readAll() {
       return wrapStorageOperation("read-all", () => chrome.storage.local.get());

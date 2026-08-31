@@ -6,26 +6,29 @@ import {
 } from "../../src/background/storage-adapter";
 
 describe("createChromeStorageAdapter", () => {
-  it("uses exact and full reads plus multi-key writes and removes", async () => {
+  it("uses exact reads, key-only enumeration, full reads, and multi-key writes and removes", async () => {
     const get = vi.fn()
       .mockResolvedValueOnce({ first: 1 })
       .mockResolvedValueOnce({ first: 1, second: 2 });
+    const getKeys = vi.fn().mockResolvedValue(["first", "second"]);
     const set = vi.fn().mockResolvedValue(undefined);
     const remove = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(globalThis, "chrome", {
       configurable: true,
-      value: { storage: { local: { get, remove, set } } },
+      value: { storage: { local: { get, getKeys, remove, set } } },
       writable: true,
     });
     const adapter = createChromeStorageAdapter();
 
     await expect(adapter.get(["first"])).resolves.toEqual({ first: 1 });
+    await expect(adapter.getKeys()).resolves.toEqual(["first", "second"]);
     await expect(adapter.readAll()).resolves.toEqual({ first: 1, second: 2 });
     await adapter.set({ first: 1, second: 2 });
     await adapter.remove(["first", "second"]);
 
     expect(get).toHaveBeenNthCalledWith(1, ["first"]);
     expect(get).toHaveBeenNthCalledWith(2);
+    expect(getKeys).toHaveBeenCalledOnce();
     expect(set).toHaveBeenCalledWith({ first: 1, second: 2 });
     expect(remove).toHaveBeenCalledWith(["first", "second"]);
   });
@@ -38,6 +41,7 @@ describe("createChromeStorageAdapter", () => {
         storage: {
           local: {
             get,
+            getKeys: vi.fn().mockResolvedValue([]),
             remove: vi.fn().mockResolvedValue(undefined),
             set: vi.fn().mockResolvedValue(undefined),
           },

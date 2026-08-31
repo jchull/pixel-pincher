@@ -34,6 +34,10 @@ class MemoryStorage implements StorageAdapter {
     return result;
   }
 
+  async getKeys(): Promise<readonly string[]> {
+    return [...this.values.keys()];
+  }
+
   async readAll(): Promise<Readonly<Record<string, unknown>>> {
     return Object.fromEntries(this.values);
   }

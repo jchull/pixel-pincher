@@ -356,7 +356,7 @@ export class OverlayRepository {
       this.#withMaintenance(async () => {
         try {
           if (await this.#purgeFromValidIndex(origin))
-            return this.#removeLegacyPages(origin);
+            return { ok: true, value: undefined };
         } catch (error: unknown) {
           if (!(error instanceof AppError) || error.code !== "invalid-stored-data")
             return repositoryFailure();
@@ -568,30 +568,19 @@ export class OverlayRepository {
       index.origins.filter((candidate) => candidate.origin !== origin),
       index.imageIds.filter((id) => id !== entry.referenceId),
     );
+    // V2 may coexist with obsolete page keys after an interrupted migration.
+    // Key enumeration exposes names only, so this remains a targeted deletion
+    // without materializing unrelated image payloads.
+    const pageKeys = (await this.#adapter.getKeys()).filter(
+      (candidate) => pageRecordKeyOrigin(candidate) === origin,
+    );
     await this.#adapter.remove([
       key,
       ...(entry.referenceId === null ? [] : [imageRecordKey(entry.referenceId)]),
+      ...pageKeys,
     ]);
     await this.#adapter.set({ [ORIGIN_INDEX_KEY]: nextIndex });
     return true;
-  }
-
-  /**
-   * V2 may coexist with obsolete page keys after an interrupted migration. This
-   * deletion-only scan keeps the valid-index path targeted for its metadata and
-   * image removal while guaranteeing that those legacy keys cannot survive.
-   */
-  async #removeLegacyPages(origin: Origin): Promise<Result<void, RepositoryError>> {
-    try {
-      const values = await this.#adapter.readAll();
-      const pageKeys = Object.keys(values).filter(
-        (key) => pageRecordKeyOrigin(key) === origin,
-      );
-      if (pageKeys.length > 0) await this.#adapter.remove(pageKeys);
-      return { ok: true, value: undefined };
-    } catch {
-      return repositoryFailure();
-    }
   }
 
   /** Explicit deletion recovery: malformed records never prevent target-origin removal. */
