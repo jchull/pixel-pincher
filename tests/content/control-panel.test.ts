@@ -378,16 +378,49 @@ describe("ControlPanel", () => {
     });
     dropTarget.dispatchEvent(paste);
     await vi.waitFor(() => expect(importer).toHaveBeenCalledTimes(3));
-    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(new Uint8Array([1, 2, 3]), {
-        headers: { "content-type": "image/png" },
-      }),
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async () =>
+        new Response(new Uint8Array([1, 2, 3]), {
+          headers: { "content-type": "image/png" },
+        }),
     );
     const referenceUrl = byId<HTMLInputElement>("reference-url");
+    const importUrl = byId<HTMLButtonElement>("import-url");
+    referenceUrl.value = "data:image/png;base64,AQID";
+    importUrl.click();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+    expect(fetch).toHaveBeenCalledWith(expect.any(URL), {
+      credentials: "omit",
+      referrerPolicy: "no-referrer",
+    });
+    await vi.waitFor(() => expect(importer).toHaveBeenCalledTimes(4));
     referenceUrl.value = "data:image/png;base64,AQID";
     referenceUrl.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(importer).toHaveBeenCalledTimes(5));
+  });
+
+  it("redacts URL credentials and path details from import diagnostics", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("failed"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const referenceUrl = elements.find((element) => element.id === "reference-url");
+    const importUrl = buttons.find((button) => button.id === "import-url");
+    if (!(referenceUrl instanceof HTMLInputElement) || importUrl === undefined)
+      throw new Error("Expected URL import controls.");
+    const sensitiveUrl =
+      "https://user:password@example.test/private/image.png?token=secret#fragment";
+    referenceUrl.value = sensitiveUrl;
+    importUrl.click();
+
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
-    await vi.waitFor(() => expect(importer).toHaveBeenCalledTimes(4));
+    await vi.waitFor(() => expect(error).toHaveBeenCalledOnce());
+    expect(error).toHaveBeenCalledWith(
+      "[Pixel Pincher] Could not load an image URL.",
+      { source: "https://example.test" },
+    );
+    expect(JSON.stringify(error.mock.calls)).not.toContain(sensitiveUrl);
+    expect(JSON.stringify(error.mock.calls)).not.toContain("password");
+    expect(JSON.stringify(error.mock.calls)).not.toContain("token=secret");
   });
 
   it("preserves X and Y placement intent across deferred mutations", async () => {

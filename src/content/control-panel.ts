@@ -1,11 +1,13 @@
 import controlPanelStyles from "./control-panel.css?inline";
 import { lucideIcon } from "./lucide-icons";
+import { readBoundedResponse } from "./read-bounded-response";
 
 import {
   createImportReference,
   type ImportDependencies,
 } from "../popup/import-reference";
 import {
+  MAX_IMAGE_RAW_BYTES,
   MAX_PLACEMENT,
   MAX_SCALE_PERCENT,
   MIN_PLACEMENT,
@@ -19,6 +21,7 @@ import {
   type PublicError,
   type SettingsPatch,
   type Sizing,
+  publicError,
 } from "../shared/contracts";
 import { parseContentPanelResponse } from "../shared/panel-position";
 
@@ -70,6 +73,7 @@ type PanelElements = Readonly<{
   file: HTMLInputElement;
   fileDropTarget: HTMLElement;
   uploadImage: HTMLAnchorElement;
+  referenceUrlForm: HTMLFormElement;
   referenceUrl: HTMLInputElement;
   hide: HTMLButtonElement;
   opacity: HTMLInputElement;
@@ -131,6 +135,7 @@ export class ControlPanel {
     e.fileDropTarget.addEventListener("dragleave", this.#handleDragLeave);
     e.fileDropTarget.addEventListener("drop", this.#handleDrop);
     e.fileDropTarget.addEventListener("paste", this.#handlePaste);
+    e.referenceUrlForm.addEventListener("submit", this.#handleUrlSubmit);
     e.referenceUrl.addEventListener("keydown", this.#handleUrlKey);
     e.hide.addEventListener("click", this.#handleVisibility);
     e.opacity.addEventListener("input", this.#handleOpacity);
@@ -303,6 +308,10 @@ export class ControlPanel {
   #handleUrlKey = (event: KeyboardEvent): void => {
     if (event.key !== "Enter") return;
     event.preventDefault();
+    this.#elements.referenceUrlForm.requestSubmit();
+  };
+  #handleUrlSubmit = (event: SubmitEvent): void => {
+    event.preventDefault();
     const url = parseImageUrl(this.#elements.referenceUrl.value);
     if (url === undefined) {
       this.#showError({
@@ -317,19 +326,27 @@ export class ControlPanel {
 
   async #importImageUrl(url: URL): Promise<void> {
     try {
-      const response = await fetch(url);
-      if (!response.ok)
-        throw new Error(`Image request failed: ${response.status}`);
+      const response = await fetch(url, {
+        credentials: "omit",
+        referrerPolicy: "no-referrer",
+      });
+      if (!response.ok) throw new Error(`Image request failed: ${response.status}`);
+      const bounded = await readBoundedResponse(response, MAX_IMAGE_RAW_BYTES);
+      if (!bounded.ok) {
+        if (bounded.reason === "too-large") {
+          this.#showError(publicError("image-too-large"));
+          return;
+        }
+        throw new Error("Image response could not be read.");
+      }
       const mimeType =
         response.headers.get("content-type")?.split(";", 1)[0]?.trim() ?? "";
-      const bytes = await response.arrayBuffer();
       await this.#importFile(
-        new File([bytes], fileNameFromUrl(url), { type: mimeType }),
+        new File([bounded.bytes], urlImportFileName(), { type: mimeType }),
       );
-    } catch (error) {
-      console.error("[Pixel Pincher] Could not load a pasted image URL.", {
-        error,
-        url: url.toString(),
+    } catch {
+      console.error("[Pixel Pincher] Could not load an image URL.", {
+        source: urlImportSourceLabel(url),
       });
       this.#showError({
         code: "image-decode-failed",
@@ -787,6 +804,8 @@ function findOrCreatePanel(
   uploadLine.className = "upload-line";
   uploadLine.append(uploadImage);
   fileDropTarget.append(uploadLine);
+  const referenceUrlForm = document.createElement("form");
+  referenceUrlForm.id = "reference-url-form";
   const referenceUrl = document.createElement("input");
   referenceUrl.id = "reference-url";
   referenceUrl.type = "url";
@@ -794,6 +813,9 @@ function findOrCreatePanel(
   referenceUrl.placeholder = "Paste image URL or data URI";
   referenceUrl.setAttribute("autocomplete", "url");
   referenceUrl.setAttribute("aria-label", "Image URL");
+  const importUrl = button(document, "import-url", "Import URL");
+  importUrl.type = "submit";
+  referenceUrlForm.append(referenceUrl, importUrl);
   const controls = document.createElement("fieldset");
   controls.className = "controls";
   const legend = document.createElement("legend");
@@ -835,7 +857,7 @@ function findOrCreatePanel(
   expanded.append(
     file,
     fileDropTarget,
-    referenceUrl,
+    referenceUrlForm,
     controls,
     clear,
     confirm,
@@ -852,6 +874,7 @@ function findOrCreatePanel(
     file,
     fileDropTarget,
     uploadImage,
+    referenceUrlForm,
     referenceUrl,
     hide,
     opacity,
@@ -1024,12 +1047,14 @@ function parseImageUrl(value: string): URL | undefined {
   }
 }
 
-function fileNameFromUrl(url: URL): string {
-  if (url.protocol === "data:") return "pasted-image";
-  const fileName = url.pathname.split("/").at(-1);
-  return fileName === undefined || fileName.length === 0
-    ? "pasted-image"
-    : fileName;
+function urlImportSourceLabel(url: URL): "blob" | "data" | string {
+  if (url.protocol === "blob:") return "blob";
+  if (url.protocol === "data:") return "data";
+  return `${url.protocol}//${url.host}`;
+}
+
+function urlImportFileName(): string {
+  return "pasted-image";
 }
 
 function clampPercent(value: number): number {
