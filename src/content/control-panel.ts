@@ -58,6 +58,9 @@ type DragState = Readonly<{
   position: PanelPosition;
 }>;
 type PendingSetting = Readonly<{ patch: SettingsPatch; coalesce: boolean }>;
+type PanelMutationResult =
+  | Readonly<{ ok: true; snapshot?: OverlaySnapshot }>
+  | Readonly<{ ok: false }>;
 
 type PanelElements = Readonly<{
   close: HTMLButtonElement;
@@ -97,6 +100,7 @@ export class ControlPanel {
   #nextRequestId = 1;
   #settingsInFlight = false;
   #pendingSettings: PendingSetting[] = [];
+  #placementIntent: Placement | undefined;
   #confirmingClear = false;
   #collapsed = false;
   #referenceDataUrl: string | undefined;
@@ -486,12 +490,12 @@ export class ControlPanel {
       );
       return;
     }
-    const snapshot = this.#snapshot;
-    if (snapshot === undefined) return;
+    if (this.#snapshot === undefined) return;
     const placement = {
-      ...snapshot.settings.placement,
+      ...this.#currentPlacement(),
       [input === this.#elements.x ? "x" : "y"]: clampPlacement(value),
     };
+    this.#placementIntent = placement;
     this.#queueSetting({ kind: "placement", placement });
   }
 
@@ -527,17 +531,48 @@ export class ControlPanel {
 
   async #dispatchSetting(pending: PendingSetting): Promise<void> {
     this.#settingsInFlight = true;
-    await this.#send({ kind: "update-settings", patch: pending.patch });
+    const result = await this.#send({
+      kind: "update-settings",
+      patch: pending.patch,
+    });
     this.#settingsInFlight = false;
+    if (!result.ok) {
+      this.#pendingSettings = [];
+      this.#placementIntent = undefined;
+      this.#render();
+      return;
+    }
     const next = this.#pendingSettings.shift();
-    if (next !== undefined) void this.#dispatchSetting(next);
+    if (next !== undefined) {
+      void this.#dispatchSetting(next);
+      return;
+    }
+    this.#clearPlacementIntentIfConfirmed(result.snapshot);
   }
 
-  async #send(request: PanelRequest): Promise<void> {
+  #currentPlacement(): Placement {
+    const placement = this.#placementIntent ?? this.#snapshot?.settings.placement;
+    if (placement === undefined)
+      throw new Error("Cannot update placement before the panel has a snapshot.");
+    return placement;
+  }
+
+  #clearPlacementIntentIfConfirmed(snapshot: OverlaySnapshot | undefined): void {
+    const intent = this.#placementIntent;
+    if (
+      snapshot !== undefined &&
+      intent !== undefined &&
+      snapshot.settings.placement.x === intent.x &&
+      snapshot.settings.placement.y === intent.y
+    )
+      this.#placementIntent = undefined;
+  }
+
+  async #send(request: PanelRequest): Promise<PanelMutationResult> {
     if (this.#request === undefined) {
       if (request.kind === "update-panel-position")
         this.#onPositionCommitted?.(request.panelPosition);
-      return;
+      return { ok: true };
     }
     const requestId = `panel-${this.#nextRequestId++}`;
     try {
@@ -549,19 +584,24 @@ export class ControlPanel {
           code: "invalid-request",
           message: "Pixel Pincher received an invalid request.",
         });
-        return;
+        return { ok: false };
       }
       if (!parsed.value.ok) {
         this.#showError(parsed.value.error);
-        return;
+        return { ok: false };
       }
-      if (parsed.value.value !== undefined) this.apply(parsed.value.value);
+      if (parsed.value.value !== undefined) {
+        this.apply(parsed.value.value);
+        return { ok: true, snapshot: parsed.value.value };
+      }
+      return { ok: true };
     } catch {
       this.#showError({
         code: "content-unavailable",
         message:
           "The page overlay is unavailable. Reload the page and try again.",
       });
+      return { ok: false };
     }
   }
 

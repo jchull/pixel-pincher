@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ControlPanel } from "../../src/content/control-panel";
-import type { OverlaySnapshot } from "../../src/shared/contracts";
+import {
+  publicError,
+  type ContentPanelRequest,
+  type OverlaySnapshot,
+} from "../../src/shared/contracts";
 import {
   parseImportedReference,
   parseOverlaySnapshot,
@@ -69,6 +73,23 @@ function pointer(
     button: { value: values.button ?? 0 },
   });
   return event;
+}
+
+function deferred<T>(): Readonly<{
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+}> {
+  let complete: ((value: T) => void) | undefined;
+  const promise = new Promise<T>((resolve) => {
+    complete = resolve;
+  });
+  return {
+    promise,
+    resolve(value: T): void {
+      if (complete === undefined) throw new Error("Deferred promise is not ready.");
+      complete(value);
+    },
+  };
 }
 
 describe("ControlPanel", () => {
@@ -367,6 +388,108 @@ describe("ControlPanel", () => {
     referenceUrl.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
     await vi.waitFor(() => expect(importer).toHaveBeenCalledTimes(4));
+  });
+
+  it("preserves X and Y placement intent across deferred mutations", async () => {
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    const requests: ContentPanelRequest[] = [];
+    const send = vi.fn((request: ContentPanelRequest): Promise<unknown> => {
+      requests.push(request);
+      return requests.length === 1 ? first.promise : second.promise;
+    });
+    panel.destroy();
+    panel = new ControlPanel({ window, document, request: send });
+    panel.apply(snapshot(1));
+    const input = (id: string): HTMLInputElement => {
+      const found = [...elements].reverse().find((element) => element.id === id);
+      if (!(found instanceof HTMLInputElement)) throw new Error(`Expected ${id}.`);
+      return found;
+    };
+    const x = input("x");
+    const y = input("y");
+
+    x.value = "12";
+    x.dispatchEvent(new Event("input"));
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    y.value = "30";
+    y.dispatchEvent(new Event("input"));
+    expect(requests).toHaveLength(1);
+    const firstRequest = requests[0];
+    if (firstRequest === undefined || firstRequest.kind !== "update-settings")
+      throw new Error("Expected the first settings mutation.");
+    expect(firstRequest.patch).toEqual({
+      kind: "placement",
+      placement: { x: 12, y: 20 },
+    });
+
+    first.resolve({
+      requestId: firstRequest.requestId,
+      ok: true,
+      value: snapshot(2, undefined, { placement: { x: 12, y: 20 } }),
+    });
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    const secondRequest = requests[1];
+    if (secondRequest === undefined || secondRequest.kind !== "update-settings")
+      throw new Error("Expected the queued settings mutation.");
+    expect(secondRequest.patch).toEqual({
+      kind: "placement",
+      placement: { x: 12, y: 30 },
+    });
+
+    second.resolve({
+      requestId: secondRequest.requestId,
+      ok: true,
+      value: snapshot(3, undefined, { placement: { x: 12, y: 30 } }),
+    });
+    await vi.waitFor(() => {
+      expect(x.value).toBe("12");
+      expect(y.value).toBe("30");
+    });
+  });
+
+  it("stops queued mutations and restores confirmed controls after a failure", async () => {
+    const first = deferred<unknown>();
+    const requests: ContentPanelRequest[] = [];
+    const send = vi.fn((request: ContentPanelRequest): Promise<unknown> => {
+      requests.push(request);
+      return first.promise;
+    });
+    panel.destroy();
+    panel = new ControlPanel({ window, document, request: send });
+    panel.apply(snapshot(1));
+    const input = (id: string): HTMLInputElement => {
+      const found = [...elements].reverse().find((element) => element.id === id);
+      if (!(found instanceof HTMLInputElement)) throw new Error(`Expected ${id}.`);
+      return found;
+    };
+    const x = input("x");
+    const y = input("y");
+
+    x.value = "12";
+    x.dispatchEvent(new Event("input"));
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    y.value = "30";
+    y.dispatchEvent(new Event("input"));
+    const firstRequest = requests[0];
+    if (firstRequest === undefined) throw new Error("Expected a settings mutation.");
+    first.resolve({
+      requestId: firstRequest.requestId,
+      ok: false,
+      error: publicError("content-unavailable"),
+    });
+
+    await vi.waitFor(() => {
+      expect(x.value).toBe("10");
+      expect(y.value).toBe("20");
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(
+      [...elements]
+        .reverse()
+        .find((element) => element.getAttribute("role") === "status")
+        ?.textContent,
+    ).toBe(publicError("content-unavailable").message);
   });
 
   it("clamps persisted positions to keep its handle reachable", () => {
