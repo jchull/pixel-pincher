@@ -41,10 +41,14 @@ to every website. Revoking that permission removes the registered overlay and
 Pixel Pincher data for the origin.
 
 References, settings, and placement are stored locally in `chrome.storage.local`.
-The extension does not send telemetry or upload reference images. Entering an
-image URL or data URI is the exception: Pixel Pincher fetches that URL only at
-your request. Remote servers must allow the browser to fetch the image (for example, with
-appropriate CORS headers).
+Pixel Pincher sends no telemetry and does not upload images or page content.
+The only network activity is a user-directed URL import request: when you
+submit an HTTP or HTTPS image URL, Pixel Pincher requests that URL, and the
+selected server receives normal network metadata for that request. The
+validated image bytes are stored only in `chrome.storage.local`. Importing a
+current-page `blob:` or `data:` URL makes no remote request. Remote servers
+must allow the browser to fetch the image (for example, with appropriate CORS
+headers).
 
 Source images are limited to 10 MiB, encoded data URLs to 14 MiB, and decoded
 images to 40 million pixels. Invalid or unsupported files do not replace an

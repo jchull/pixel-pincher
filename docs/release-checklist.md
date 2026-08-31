@@ -38,14 +38,42 @@ from unit tests or a successful build.
       category, support contact, and screenshots that accurately show the
       popup and overlay. Screenshots must not expose customer pages, reference
       artwork, tokens, or personal data.
-- [ ] Complete the privacy disclosure: reference images, settings, and
-      placement remain in `chrome.storage.local`; the extension makes no
-      network requests and does not collect or transmit page content; it does
-      not support incognito. Re-review the disclosure whenever permissions or
-      data handling change.
+- [ ] Complete the privacy disclosure using the final disclosure text in the
+      Store listing privacy disclosure section below. The disclosure must
+      state: Pixel Pincher sends no telemetry; it does not upload images or
+      page content; when the user submits an HTTP or HTTPS image URL, Pixel
+      Pincher makes a user-directed URL import request to that URL, and the
+      selected server receives normal network metadata for that request;
+      Pixel Pincher stores the validated image bytes only in
+      `chrome.storage.local`; it does not support incognito. Never state that
+      the extension makes no network requests. Re-review the disclosure
+      whenever permissions or data handling change.
+- [ ] After Task 4 (bounded URL imports) is merged, verify that URL import
+      requests use `credentials: "omit"` and `referrerPolicy: "no-referrer"`
+      in source, and record the browser network-panel confirmation that URL
+      imports send no cookies and no referrer in the release record.
+- [ ] Before submission, compare the network and storage statements in the
+      implementation, `README.md`, the Chrome Web Store listing, and the
+      privacy questionnaire. All four must describe the same behavior: no
+      telemetry, no uploads, and a user-directed URL import request only when
+      the user submits an HTTP or HTTPS image URL.
 - [ ] Upload the reviewed archive to the Chrome Web Store as a draft, verify
       the store's permission summary matches the manifest review, then submit
       only after the matrix below passes on both browsers.
+
+## Store listing privacy disclosure
+
+No store listing draft exists in this repository. Copy the following text
+into the Chrome Web Store listing and privacy questionnaire, and keep it in
+sync with `README.md` and the implementation:
+
+> Pixel Pincher sends no telemetry and does not upload images or page
+> content. The only network activity is a user-directed URL import request:
+> when you submit an HTTP or HTTPS image URL, Pixel Pincher requests that
+> URL, and the server you selected receives normal network metadata for that
+> request. Pixel Pincher stores the validated image bytes only in
+> `chrome.storage.local`. Importing a current-page `blob:` or `data:` URL
+> makes no remote request. Pixel Pincher does not support incognito.
 
 ## Manual Chrome/Chromium matrix
 
