@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ControlPanel } from "../../src/content/control-panel";
 import type { OverlaySnapshot } from "../../src/shared/contracts";
-import { parseOverlaySnapshotWithPanelPosition } from "../../src/shared/panel-position";
-import { parseImportedReference } from "../../src/shared/parse";
+import {
+  parseImportedReference,
+  parseOverlaySnapshot,
+} from "../../src/shared/parse";
 
 const metadata = {
   id: "123e4567-e89b-42d3-a456-426614174000",
@@ -31,7 +33,7 @@ function snapshot(
   settings: Record<string, unknown> = {},
 ): OverlaySnapshot {
   return parse(
-    parseOverlaySnapshotWithPanelPosition({
+    parseOverlaySnapshot({
       revision,
       origin: "https://example.test",
       pageKey: "https://example.test/page",

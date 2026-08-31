@@ -7,11 +7,14 @@ import {
 import {
   parseContentPanelRequest,
   parseContentPanelResponse,
-  parseContentRequestWithPanelPosition,
-  parseOriginRecordWithPanelPosition,
-  parseOverlaySnapshotWithPanelPosition,
-  parsePanelPosition,
 } from "../../src/shared/panel-position";
+import {
+  parseContentRequest,
+  parseHydration,
+  parseOriginRecordV1,
+  parseOverlaySnapshot,
+  parsePanelPosition,
+} from "../../src/shared/parse";
 
 const originRecord = {
   schemaVersion: 1,
@@ -53,57 +56,40 @@ describe("panel position boundaries", () => {
     expect(parsePanelPosition({ x: 0, y: 0, extra: true }).ok).toBe(false);
   });
 
-  it("parses legacy V1 origin records and optional site positions", () => {
-    expect(parseOriginRecordWithPanelPosition(originRecord)).toEqual({
-      ok: true,
-      value: originRecord,
-    });
-    expect(
-      parseOriginRecordWithPanelPosition({
-        ...originRecord,
-        placement: { x: 12, y: 34 },
-        panelPosition: { x: 12, y: 34 },
-      }),
-    ).toEqual({
-      ok: true,
-      value: {
-        ...originRecord,
+  it("parses every valid optional-key combination in V1 origin records", () => {
+    const optionalFields = [
+      {},
+      { placement: { x: 12, y: 34 } },
+      { panelPosition: { x: 12, y: 34 } },
+      {
         placement: { x: 12, y: 34 },
         panelPosition: { x: 12, y: 34 },
       },
-    });
+    ];
+    for (const fields of optionalFields) {
+      expect(parseOriginRecordV1({ ...originRecord, ...fields }).ok).toBe(true);
+    }
     expect(
-      parseOriginRecordWithPanelPosition({
+      parseOriginRecordV1({
         ...originRecord,
         panelPosition: { x: -1, y: 0 },
       }).ok,
     ).toBe(false);
-    expect(
-      parseOriginRecordWithPanelPosition({ ...originRecord, extra: true }).ok,
-    ).toBe(false);
+    expect(parseOriginRecordV1({ ...originRecord, extra: true }).ok).toBe(
+      false,
+    );
   });
 
-  it("keeps panel position optional in snapshots and parses correlated sender-bound requests", () => {
-    expect(parseOverlaySnapshotWithPanelPosition(snapshot)).toEqual({
+  it("keeps panel position optional in canonical snapshots and nested messages", () => {
+    const positionedSnapshot = { ...snapshot, panelPosition: { x: 7, y: 9 } };
+    expect(parseOverlaySnapshot(snapshot)).toEqual({ ok: true, value: snapshot });
+    expect(parseOverlaySnapshot(positionedSnapshot)).toEqual({
       ok: true,
-      value: snapshot,
+      value: positionedSnapshot,
     });
-    expect(
-      parseOverlaySnapshotWithPanelPosition({
-        ...snapshot,
-        panelPosition: { x: 7, y: 9 },
-      }),
-    ).toEqual({
-      ok: true,
-      value: { ...snapshot, panelPosition: { x: 7, y: 9 } },
-    });
-    expect(
-      parseContentPanelRequest({
-        kind: "update-panel-position",
-        requestId: "panel-1",
-        panelPosition: { x: 7, y: 9 },
-      }),
-    ).toMatchObject({ ok: true, value: { requestId: "panel-1" } });
+    expect(parseOverlaySnapshot({ ...positionedSnapshot, extra: true }).ok).toBe(
+      false,
+    );
     const dataUrl = "data:image/png;base64,AQID";
     const reference = {
       metadata: {
@@ -117,6 +103,35 @@ describe("panel position boundaries", () => {
       },
       dataUrl,
     };
+    const positionedSnapshotWithReference = {
+      ...positionedSnapshot,
+      reference: reference.metadata,
+    };
+    expect(
+      parseHydration({
+        snapshot: positionedSnapshotWithReference,
+        reference,
+      }).ok,
+    ).toBe(true);
+    expect(
+      parseContentRequest({
+        kind: "hydrate-overlay",
+        hydration: { snapshot: positionedSnapshotWithReference, reference },
+      }).ok,
+    ).toBe(true);
+    expect(
+      parseContentRequest({
+        kind: "apply-settings",
+        snapshot: positionedSnapshot,
+      }).ok,
+    ).toBe(true);
+    expect(
+      parseContentPanelRequest({
+        kind: "update-panel-position",
+        requestId: "panel-1",
+        panelPosition: { x: 7, y: 9 },
+      }),
+    ).toMatchObject({ ok: true, value: { requestId: "panel-1" } });
     expect(
       parseContentPanelRequest({ kind: "get-panel-state", requestId: "get" }),
     ).toMatchObject({ ok: true });
@@ -155,13 +170,13 @@ describe("panel position boundaries", () => {
       parseContentPanelResponse({
         requestId: "response",
         ok: true,
-        value: { ...snapshot, panelPosition: { x: 7, y: 9 } },
+        value: positionedSnapshot,
       }),
     ).toMatchObject({ ok: true, value: { requestId: "response", ok: true } });
     expect(
-      parseContentRequestWithPanelPosition({
+      parseContentRequest({
         kind: "apply-settings",
-        snapshot: { ...snapshot, panelPosition: { x: 7, y: 9 } },
+        snapshot: positionedSnapshot,
       }),
     ).toMatchObject({
       ok: true,

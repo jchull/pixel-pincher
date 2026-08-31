@@ -5,7 +5,6 @@ import {
   type PublicError,
   type Result,
 } from "../../src/shared/contracts";
-import { parseTabStateWithPanelPosition } from "../../src/shared/panel-position";
 import {
   parseContentEvent,
   parseContentRequest,
@@ -385,7 +384,7 @@ describe("boundary parsers", () => {
       }).ok,
     ).toBe(false);
     expect(
-      parseTabStateWithPanelPosition({
+      parseTabState({
         tabId: 3,
         url: "https://example.com/page",
         origin: "https://example.com",

@@ -174,6 +174,38 @@ describe("OverlayRepository", () => {
     });
   });
 
+  it("preserves panel position in settings and reference mutation snapshots", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    expect(
+      (
+        await repository.updatePanelPosition({
+          url,
+          panelPosition: { x: 12, y: 34 },
+        })
+      ).ok,
+    ).toBe(true);
+
+    await expect(
+      repository.updateSettings({
+        url,
+        patch: { kind: "opacity", opacity: 0.75 },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      value: { panelPosition: { x: 12, y: 34 } },
+    });
+    await expect(
+      repository.replaceReference({
+        url,
+        reference: reference(),
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      value: { panelPosition: { x: 12, y: 34 } },
+    });
+  });
+
   it("hydrates validated image data only after a reference exists and advances revisions", async () => {
     const storage = new MemoryStorage();
     const repository = new OverlayRepository(storage);

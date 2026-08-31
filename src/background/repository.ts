@@ -32,9 +32,9 @@ import {
   parseImageRecordV1,
   parseImportedReference,
   parseOriginIndexV1,
+  parseOriginRecordV1,
   parsePageRecordV1,
 } from "../shared/parse";
-import { parseOriginRecordWithPanelPosition } from "../shared/panel-position";
 import type { StorageAdapter } from "./storage-adapter";
 
 type LoadedState = Readonly<{
@@ -238,13 +238,7 @@ export class OverlayRepository {
       await this.#writeWithIndex(state.origin, {
         [originRecordKey(state.origin)]: origin,
       });
-      return {
-        revision,
-        origin: state.origin,
-        pageKey: state.pageKey,
-        settings: next,
-        reference: before.reference,
-      };
+      return { ...before, revision, settings: next };
     });
   }
 
@@ -370,13 +364,7 @@ export class OverlayRepository {
             /* replacement is committed */
           }
         }
-        return {
-          revision,
-          origin: state.origin,
-          pageKey: state.pageKey,
-          settings: before.settings,
-          reference: reference.metadata,
-        };
+        return { ...before, revision, reference: reference.metadata };
       } catch (error: unknown) {
         if (createdImage) {
           try {
@@ -401,14 +389,14 @@ export class OverlayRepository {
           const targetRecord =
             targetValue === undefined
               ? null
-              : parseOriginRecordWithPanelPosition(targetValue);
+              : parseOriginRecordV1(targetValue);
           const remainingOrigins = new Set<Origin>();
           let targetReferenceId: ReferenceMetadata["id"] | undefined;
           let duplicateReferenceOwner = false;
 
           for (const [key, value] of Object.entries(allValues)) {
             if (!key.startsWith("pixel-pincher:origin:")) continue;
-            const record = parseOriginRecordWithPanelPosition(value);
+            const record = parseOriginRecordV1(value);
             if (!record.ok || key !== originRecordKey(record.value.origin))
               continue;
             if (record.value.origin === origin) {
@@ -434,7 +422,7 @@ export class OverlayRepository {
             targetReferenceId = targetRecord.value.reference.id;
             for (const [key, value] of Object.entries(allValues)) {
               if (!key.startsWith("pixel-pincher:origin:")) continue;
-              const record = parseOriginRecordWithPanelPosition(value);
+              const record = parseOriginRecordV1(value);
               if (
                 record.ok &&
                 record.value.origin !== origin &&
@@ -479,13 +467,13 @@ export class OverlayRepository {
         const actualOrigins: Origin[] = [];
         for (const [key, value] of Object.entries(values)) {
           if (!key.startsWith("pixel-pincher:origin:")) continue;
-          const record = parseOriginRecordWithPanelPosition(value);
+          const record = parseOriginRecordV1(value);
           if (!record.ok || key !== originRecordKey(record.value.origin))
             return invalidStoredData();
           actualOrigins.push(record.value.origin);
         }
         for (const origin of storedIndex.value.origins) {
-          const record = parseOriginRecordWithPanelPosition(
+          const record = parseOriginRecordV1(
             values[originRecordKey(origin)],
           );
           if (!record.ok || record.value.origin !== origin)
@@ -527,7 +515,7 @@ export class OverlayRepository {
         const imageOwners = new Map<string, Origin>();
         for (const [key, value] of Object.entries(values)) {
           if (!key.startsWith("pixel-pincher:origin:")) continue;
-          const record = parseOriginRecordWithPanelPosition(value);
+          const record = parseOriginRecordV1(value);
           if (!record.ok || key !== originRecordKey(record.value.origin))
             return invalidStoredData();
           origins.add(record.value.origin);
@@ -584,7 +572,7 @@ export class OverlayRepository {
       const originRecord =
         values[originKey] === undefined
           ? null
-          : parseOriginRecordWithPanelPosition(values[originKey]);
+          : parseOriginRecordV1(values[originKey]);
       const pageRecord =
         values[pageKeyName] === undefined
           ? null
@@ -699,7 +687,7 @@ export class OverlayRepository {
     const values = await this.#adapter.readAll();
     for (const [key, value] of Object.entries(values)) {
       if (!key.startsWith("pixel-pincher:origin:")) continue;
-      const record = parseOriginRecordWithPanelPosition(value);
+      const record = parseOriginRecordV1(value);
       if (!record.ok || key !== originRecordKey(record.value.origin)) {
         throw new AppError("invalid-stored-data");
       }
@@ -720,7 +708,7 @@ export class OverlayRepository {
     let owners = 0;
     for (const [key, value] of Object.entries(values)) {
       if (!key.startsWith("pixel-pincher:origin:")) continue;
-      const record = parseOriginRecordWithPanelPosition(value);
+      const record = parseOriginRecordV1(value);
       if (!record.ok || key !== originRecordKey(record.value.origin)) {
         throw new AppError("invalid-stored-data");
       }

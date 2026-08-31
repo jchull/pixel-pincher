@@ -16,8 +16,8 @@ import {
   parseOverlaySnapshot,
   parsePopupResponse,
   parseSupportedUrl,
+  parseTabState,
 } from "../shared/parse";
-import { parseTabStateWithPanelPosition } from "../shared/panel-position";
 
 export type PopupState =
   | Readonly<{ kind: "loading" }>
@@ -413,7 +413,7 @@ export class PopupController {
     try {
       const parsed = parsePopupResponse(
         await this.#adapter.send({ ...request, requestId }),
-        parseTabStateWithPanelPosition,
+        parseTabState,
       );
       if (!parsed.ok || parsed.value.requestId !== requestId)
         return this.#invalid(focusId);

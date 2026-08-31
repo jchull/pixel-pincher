@@ -6,7 +6,7 @@ import {
 } from "../src/content/control-panel";
 import { OverlayController } from "../src/content/overlay-controller";
 import type { ContentEvent } from "../src/shared/contracts";
-import { parseContentRequestWithPanelPosition } from "../src/shared/panel-position";
+import { parseContentRequest } from "../src/shared/parse";
 
 const controllerKey = Symbol.for("pixel-pincher.overlay-controller");
 const panelKey = Symbol.for("pixel-pincher.control-panel");
@@ -57,7 +57,7 @@ export function startOverlayContent(
   contentWindow[controllerKey] = controller;
   contentWindow[panelKey] = panel;
   chrome.runtime.onMessage.addListener((message: unknown) => {
-    const request = parseContentRequestWithPanelPosition(message);
+    const request = parseContentRequest(message);
     if (!request.ok) return;
     switch (request.value.kind) {
       case "hydrate-overlay":

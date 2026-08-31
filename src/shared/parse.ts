@@ -13,6 +13,7 @@ import {
   type OriginRecordV1,
   type OverlaySettings,
   type OverlaySnapshot,
+  type PanelPosition,
   type PageKey,
   type PageRecordV1,
   type Placement,
@@ -29,8 +30,10 @@ import {
   type TabState,
   MAX_IMAGE_ENCODED_BYTES,
   MAX_IMAGE_PIXELS,
+  MAX_PANEL_POSITION,
   MAX_PLACEMENT,
   MAX_SCALE_PERCENT,
+  MIN_PANEL_POSITION,
   MIN_PLACEMENT,
   MIN_SCALE_PERCENT,
   PUBLIC_ERROR_MESSAGES,
@@ -55,7 +58,7 @@ function failure<T>(code: ParseErrorCode): Result<T, PublicError> {
   return { ok: false, error: publicError(code) };
 }
 
-function isOwnDataRecord(value: unknown): value is UnknownRecord {
+export function isOwnDataRecord(value: unknown): value is UnknownRecord {
   if (typeof value !== "object" || value === null) return false;
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) return false;
@@ -68,7 +71,10 @@ function isOwnDataRecord(value: unknown): value is UnknownRecord {
   });
 }
 
-function hasExactKeys(value: UnknownRecord, keys: readonly string[]): boolean {
+export function hasExactKeys(
+  value: UnknownRecord,
+  keys: readonly string[],
+): boolean {
   const ownKeys = Reflect.ownKeys(value);
   return (
     ownKeys.length === keys.length &&
@@ -205,6 +211,34 @@ function parsePlacementValue(
 
 export function parsePlacement(value: unknown): Result<Placement, PublicError> {
   return parsePlacementValue(value, "invalid-request");
+}
+
+function parsePanelPositionValue(
+  value: unknown,
+  code: ParseErrorCode,
+): Result<PanelPosition, PublicError> {
+  if (!isOwnDataRecord(value) || !hasExactKeys(value, ["x", "y"]))
+    return failure(code);
+  const x = readSafeInteger(value.x);
+  const y = readSafeInteger(value.y);
+  if (
+    x === undefined ||
+    y === undefined ||
+    x < MIN_PANEL_POSITION ||
+    x > MAX_PANEL_POSITION ||
+    y < MIN_PANEL_POSITION ||
+    y > MAX_PANEL_POSITION
+  ) {
+    return failure(code);
+  }
+  return { ok: true, value: { x, y } };
+}
+
+/** Validates persisted, viewport-relative control-panel coordinates. */
+export function parsePanelPosition(
+  value: unknown,
+): Result<PanelPosition, PublicError> {
+  return parsePanelPositionValue(value, "invalid-request");
 }
 
 function parseSizingValue(
@@ -437,17 +471,11 @@ function parseSnapshotValue(
   value: unknown,
   code: ParseErrorCode,
 ): Result<OverlaySnapshot, PublicError> {
-  if (
-    !isOwnDataRecord(value) ||
-    !hasExactKeys(value, [
-      "revision",
-      "origin",
-      "pageKey",
-      "settings",
-      "reference",
-    ])
-  )
-    return failure(code);
+  if (!isOwnDataRecord(value)) return failure(code);
+  const hasPanelPosition = Object.hasOwn(value, "panelPosition");
+  const keys = ["revision", "origin", "pageKey", "settings", "reference"];
+  if (hasPanelPosition) keys.push("panelPosition");
+  if (!hasExactKeys(value, keys)) return failure(code);
   const revision = readSafeInteger(value.revision);
   const origin = parseOrigin(value.origin);
   const pageKey = parsePageKey(value.pageKey);
@@ -456,6 +484,9 @@ function parseSnapshotValue(
     value.reference === null
       ? { ok: true as const, value: null }
       : parseMetadataValue(value.reference, code);
+  const panelPosition = hasPanelPosition
+    ? parsePanelPositionValue(value.panelPosition, code)
+    : undefined;
   if (
     revision === undefined ||
     revision < 0 ||
@@ -463,6 +494,7 @@ function parseSnapshotValue(
     !pageKey.ok ||
     !settings.ok ||
     !reference.ok ||
+    (panelPosition !== undefined && !panelPosition.ok) ||
     !pageKey.value.startsWith(`${origin.value}/`)
   )
     return failure(code);
@@ -474,6 +506,7 @@ function parseSnapshotValue(
       pageKey: pageKey.value,
       settings: settings.value,
       reference: reference.value,
+      ...(panelPosition === undefined ? {} : { panelPosition: panelPosition.value }),
     },
   };
 }
@@ -856,44 +889,50 @@ export function parseContentEvent(
 export function parseOriginRecordV1(
   value: unknown,
 ): Result<OriginRecordV1, PublicError> {
-  if (
-    !isOwnDataRecord(value) ||
-    !hasExactKeys(value, [
-      "schemaVersion",
-      "revision",
-      "origin",
-      "settings",
-      "reference",
-    ]) ||
-    value.schemaVersion !== 1
-  )
+  if (!isOwnDataRecord(value) || value.schemaVersion !== 1)
+    return failure("invalid-stored-data");
+  const hasPlacement = Object.hasOwn(value, "placement");
+  const hasPanelPosition = Object.hasOwn(value, "panelPosition");
+  const keys = ["schemaVersion", "revision", "origin", "settings", "reference"];
+  if (hasPlacement) keys.push("placement");
+  if (hasPanelPosition) keys.push("panelPosition");
+  if (!hasExactKeys(value, keys) || !isOwnDataRecord(value.settings))
     return failure("invalid-stored-data");
   const revision = readSafeInteger(value.revision);
   const origin = parseOrigin(value.origin);
-  if (
-    !isOwnDataRecord(value.settings) ||
-    !hasExactKeys(value.settings, [
-      "visible",
-      "opacity",
-      "inverted",
-      "sizing",
-      "interactionMode",
-    ])
-  )
-    return failure("invalid-stored-data");
-  const settings = parseSettingsValue(
-    { ...value.settings, placement: { x: 0, y: 0 } },
-    "invalid-stored-data",
-  );
+  const settingsValue = value.settings;
+  const sizing = parseSizingValue(settingsValue.sizing, "invalid-stored-data");
+  const placement = hasPlacement
+    ? parsePlacementValue(value.placement, "invalid-stored-data")
+    : undefined;
+  const panelPosition = hasPanelPosition
+    ? parsePanelPositionValue(value.panelPosition, "invalid-stored-data")
+    : undefined;
   const reference =
     value.reference === null
       ? { ok: true as const, value: null }
       : parseMetadataValue(value.reference, "invalid-stored-data");
   if (
+    !hasExactKeys(settingsValue, [
+      "visible",
+      "opacity",
+      "inverted",
+      "sizing",
+      "interactionMode",
+    ]) ||
     revision === undefined ||
     revision < 0 ||
     !origin.ok ||
-    !settings.ok ||
+    typeof settingsValue.visible !== "boolean" ||
+    typeof settingsValue.opacity !== "number" ||
+    !Number.isFinite(settingsValue.opacity) ||
+    settingsValue.opacity < 0 ||
+    settingsValue.opacity > 1 ||
+    typeof settingsValue.inverted !== "boolean" ||
+    !isInteractionMode(settingsValue.interactionMode) ||
+    !sizing.ok ||
+    (placement !== undefined && !placement.ok) ||
+    (panelPosition !== undefined && !panelPosition.ok) ||
     !reference.ok
   )
     return failure("invalid-stored-data");
@@ -904,13 +943,15 @@ export function parseOriginRecordV1(
       revision,
       origin: origin.value,
       settings: {
-        visible: settings.value.visible,
-        opacity: settings.value.opacity,
-        inverted: settings.value.inverted,
-        sizing: settings.value.sizing,
-        interactionMode: settings.value.interactionMode,
+        visible: settingsValue.visible,
+        opacity: settingsValue.opacity,
+        inverted: settingsValue.inverted,
+        sizing: sizing.value,
+        interactionMode: settingsValue.interactionMode,
       },
+      ...(placement === undefined ? {} : { placement: placement.value }),
       reference: reference.value,
+      ...(panelPosition === undefined ? {} : { panelPosition: panelPosition.value }),
     },
   };
 }

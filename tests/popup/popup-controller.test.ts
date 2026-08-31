@@ -262,6 +262,67 @@ describe("popup controller", () => {
     expect(harness.controller.state.kind).toBe("enabled-reference");
   });
 
+  it("accepts a successful registration response containing panelPosition", async () => {
+    const harness = createHarness({ enabled: false });
+    harness.adapter.send = async (request) => {
+      if (request.kind === "get-tab-state") {
+        return {
+          requestId: request.requestId,
+          ok: true,
+          value: tab({ enabled: false }),
+        };
+      }
+      if (request.kind === "register-site") {
+        return {
+          requestId: request.requestId,
+          ok: true,
+          value: { ...snapshot(), panelPosition: { x: 24, y: 36 } },
+        };
+      }
+      throw new Error(`Unexpected request: ${request.kind}`);
+    };
+    await harness.controller.start();
+    await harness.controller.enable();
+    expect(harness.controller.state).toMatchObject({
+      kind: "enabled-reference",
+      tab: { snapshot: { panelPosition: { x: 24, y: 36 } } },
+    });
+  });
+
+  it("accepts successful replacement and settings responses containing panelPosition", async () => {
+    const harness = createHarness();
+    harness.adapter.send = async (request) => {
+      if (request.kind === "get-tab-state") {
+        return { requestId: request.requestId, ok: true, value: tab() };
+      }
+      if (request.kind === "replace-reference" || request.kind === "update-settings") {
+        return {
+          requestId: request.requestId,
+          ok: true,
+          value: { ...snapshot(), panelPosition: { x: 24, y: 36 } },
+        };
+      }
+      throw new Error(`Unexpected request: ${request.kind}`);
+    };
+    await harness.controller.start();
+    await harness.controller.importFile(
+      new File(["x"], "reference.png", { type: "image/png" }),
+    );
+    expect(harness.controller.state).toMatchObject({
+      kind: "enabled-reference",
+      tab: { snapshot: { panelPosition: { x: 24, y: 36 } } },
+    });
+    harness.controller.updateSettings(
+      { kind: "opacity", opacity: 0.25 },
+      "opacity",
+    );
+    await settled();
+    expect(harness.controller.state).toMatchObject({
+      kind: "enabled-reference",
+      tab: { snapshot: { panelPosition: { x: 24, y: 36 } } },
+    });
+  });
+
   it("retains stable import errors, then imports a successful replacement", async () => {
     const importer = vi
       .fn()
