@@ -17,6 +17,30 @@ from unit tests or a successful build.
 - Store package SHA-256: `____________`
 - Rollback owner and approved previous version: `____________`
 
+### Development-only audit exception — recorded 2026-08-31
+
+`pnpm audit --prod` is clean. The full `pnpm audit` is **not clean**: it
+reports the six development-only dependencies below. pnpm reports each finding
+as `dev: true` and `bundled: false`; they are WXT development or browser-runner
+tooling and are not reachable from, or packaged in, the MV3 archive built in
+`dist/chrome-mv3`.
+
+- `GHSA-w7jw-789q-3m8p` and `GHSA-395f-4hp3-45gv`: `.>wxt>web-ext-run>fx-runner>shell-quote`
+- `GHSA-ph9p-34f9-6g65`: `.>wxt>web-ext-run>tmp`
+- `GHSA-xcpc-8h2w-3j85`: `.>wxt>web-ext-run>firefox-profile>adm-zip`
+- `GHSA-w5hq-g745-h8pq`: `.>wxt>web-ext-run>node-notifier>uuid`
+- `GHSA-g7r4-m6w7-qqqr`: `.>wxt>esbuild`, `.>wxt>unimport>unplugin>esbuild`,
+  and `.>wxt>vite-node>vite>esbuild`
+
+WXT was upgraded to the newest compatible stable patch, `0.20.27`. WXT
+`0.21.4` removes these advisories, but is incompatible with the current
+entrypoint contract: `pnpm build` fails before bundling with `Cannot read
+properties of undefined (reading 'get')`, and its debug transform replaces
+`defineBackground(() => { ... })` with `defineBackground()`. Do not treat this
+as a clean audit or add an incompatible override. Release remediation owner:
+Jeremy Hull. This exception expires and must be reviewed by **2026-09-30**;
+upgrade or migrate WXT before extending the deadline.
+
 ## Preflight and package
 
 - [ ] Update the release version in `package.json` (and confirm the generated
