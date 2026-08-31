@@ -1,6 +1,6 @@
 export interface StorageAdapter {
   get(keys: readonly string[]): Promise<Readonly<Record<string, unknown>>>;
-  /** Reserved for one-time index migration and explicit corruption-recovery purge. */
+  /** Reserved for one-time index migration and deletion-only purge recovery. */
   readAll(): Promise<Readonly<Record<string, unknown>>>;
   set(values: Readonly<Record<string, unknown>>): Promise<void>;
   remove(keys: readonly string[]): Promise<void>;

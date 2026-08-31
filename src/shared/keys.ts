@@ -2,7 +2,7 @@ import type { Origin, PageKey, ReferenceId } from "./contracts";
 
 const PREFIX = "pixel-pincher";
 const PAGE_RECORD_PREFIX = `${PREFIX}:page:`;
-const IMAGE_RECORD_PREFIX = `${PREFIX}:image:`;
+export const IMAGE_RECORD_KEY_PREFIX = `${PREFIX}:image:`;
 
 export const ORIGIN_INDEX_KEY = `${PREFIX}:origins`;
 
@@ -66,7 +66,7 @@ export function pageRecordKeyOrigin(value: string): Origin | undefined {
 
 /** Identifies the image-record namespace without reading a stored payload. */
 export function isImageRecordKey(value: string): boolean {
-  return value.startsWith(IMAGE_RECORD_PREFIX);
+  return value.startsWith(IMAGE_RECORD_KEY_PREFIX);
 }
 
 export function imageRecordKey(referenceId: ReferenceId): string {

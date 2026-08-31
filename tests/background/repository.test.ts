@@ -18,14 +18,25 @@ class MemoryStorage implements StorageAdapter {
   readAllCalls = 0;
   #setCalls = 0;
   #failSetCall: number | undefined;
+  #failNextReadAll = false;
   #failNextRemove = false;
 
   failSetOn(call: number): void {
     this.#failSetCall = call;
   }
 
+  failNextReadAll(): void {
+    this.#failNextReadAll = true;
+  }
+
   failNextRemove(): void {
     this.#failNextRemove = true;
+  }
+
+  resetCalls(): void {
+    this.reads.length = 0;
+    this.writes.length = 0;
+    this.removes.length = 0;
   }
 
   async get(keys: readonly string[]): Promise<Readonly<Record<string, unknown>>> {
@@ -38,6 +49,10 @@ class MemoryStorage implements StorageAdapter {
   }
 
   async readAll(): Promise<Readonly<Record<string, unknown>>> {
+    if (this.#failNextReadAll) {
+      this.#failNextReadAll = false;
+      throw new Error("planned read-all failure");
+    }
     this.readAllCalls += 1;
     return { ...this.values };
   }
@@ -136,6 +151,10 @@ describe("OverlayRepository V2 index", () => {
       referenceId: imported.metadata.id,
       dataUrl: imported.dataUrl,
     };
+    const corruptImageId = reference({
+      id: "123e4567-e89b-42d3-a456-426614174007",
+    }).metadata.id;
+    storage.values[imageRecordKey(corruptImageId)] = { corrupt: true };
     storage.values["pixel-pincher:page:https%3A%2F%2Fexample.test%2Fpath"] = {
       legacy: true,
     };
@@ -145,11 +164,54 @@ describe("OverlayRepository V2 index", () => {
     expect(storage.values[ORIGIN_INDEX_KEY]).toEqual({
       schemaVersion: 2,
       origins: [{ origin, referenceId: imported.metadata.id }],
-      imageIds: [imported.metadata.id],
+      imageIds: [imported.metadata.id, corruptImageId].sort(),
     });
     expect(storage.values["pixel-pincher:page:https%3A%2F%2Fexample.test%2Fpath"]).toBeUndefined();
+    await expect(repository.cleanupOrphans()).resolves.toEqual({ ok: true, value: undefined });
+    expect(storage.values[imageRecordKey(corruptImageId)]).toBeUndefined();
     await repository.readSnapshot(url);
     expect(storage.readAllCalls).toBe(1);
+  });
+
+  it("preserves panel position in settings and reference mutation snapshots", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    await expect(repository.updatePanelPosition({
+      url,
+      panelPosition: { x: 12, y: 34 },
+    })).resolves.toMatchObject({ ok: true });
+
+    await expect(repository.updateSettings({
+      url,
+      patch: { kind: "opacity", opacity: 0.75 },
+    })).resolves.toMatchObject({
+      ok: true,
+      value: { panelPosition: { x: 12, y: 34 } },
+    });
+    await expect(repository.replaceReference({ url, reference: reference() })).resolves.toMatchObject({
+      ok: true,
+      value: { panelPosition: { x: 12, y: 34 } },
+    });
+  });
+
+  it("keeps settings and placement mutations away from image keys", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    await repository.replaceReference({ url, reference: reference() });
+    storage.resetCalls();
+
+    await repository.updateSettings({
+      url,
+      patch: { kind: "opacity", opacity: 0.75 },
+    });
+    await repository.updatePlacement({ url, placement: { x: 12, y: -3 } });
+    const touchedKeys = [
+      ...storage.reads.flat(),
+      ...storage.writes.flatMap((write) => Object.keys(write)),
+      ...storage.removes.flat(),
+    ];
+    expect(touchedKeys.some((key) => key.includes(":image:"))).toBe(false);
+    expect(storage.readAllCalls).toBe(0);
   });
 
   it("writes the new image, owner entry, and origin record together then deletes the old image", async () => {
@@ -262,6 +324,43 @@ describe("OverlayRepository V2 index", () => {
     expect(storage.values[originRecordKey(target)]).toBeUndefined();
     expect(storage.values[imageRecordKey(targetReference.metadata.id)]).toBeUndefined();
     expect(storage.values["pixel-pincher:page:https%3A%2F%2Ftarget.test%2Fpage"]).toBeUndefined();
+  });
+
+  it("removes target legacy pages through the valid-index purge path", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    const target = originFor(url);
+    const otherPageKey = "pixel-pincher:page:https%3A%2F%2Fother.test%2Flegacy";
+    const targetPageKey = "pixel-pincher:page:https%3A%2F%2Fexample.test%2Flegacy";
+    await repository.replaceReference({ url, reference: reference() });
+    storage.values[targetPageKey] = { legacy: true };
+    storage.values[otherPageKey] = { legacy: true };
+
+    await expect(repository.purgeOrigin(target)).resolves.toEqual({ ok: true, value: undefined });
+    expect(storage.values[targetPageKey]).toBeUndefined();
+    expect(storage.values[otherPageKey]).toEqual({ legacy: true });
+  });
+
+  it("retries legacy-page cleanup after a valid-index purge's deletion scan fails", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    const origin = originFor(url);
+    const imported = reference();
+    await repository.replaceReference({ url, reference: imported });
+    const pageKey = "pixel-pincher:page:https%3A%2F%2Fexample.test%2Flegacy";
+    storage.values[pageKey] = { legacy: true };
+    storage.failNextReadAll();
+
+    await expect(repository.purgeOrigin(origin)).resolves.toMatchObject({
+      ok: false,
+      error: { code: "storage-failed" },
+    });
+    expect(storage.values[originRecordKey(origin)]).toBeUndefined();
+    expect(storage.values[imageRecordKey(imported.metadata.id)]).toBeUndefined();
+    expect(storage.values[pageKey]).toBeDefined();
+
+    await expect(repository.purgeOrigin(origin)).resolves.toEqual({ ok: true, value: undefined });
+    expect(storage.values[pageKey]).toBeUndefined();
   });
 
   it("reports storage failures for replacement writes and purge index writes", async () => {

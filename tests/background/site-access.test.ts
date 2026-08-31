@@ -507,6 +507,36 @@ describe("SiteAccessService", () => {
     expect(storage.values.get(imageRecordKey(referenceId))).toBeUndefined();
   });
 
+  it("purges a revoked registered origin even when the index is corrupt", async () => {
+    const adapter = new FakeSiteAccessAdapter();
+    const storage = new MemoryStorage();
+    const target = getOrigin(new URL("https://corrupt-index.example/page"));
+    const parsedReferenceId = parseReferenceId(
+      "123e4567-e89b-42d3-a456-426614174051",
+    );
+    if (!parsedReferenceId.ok) throw new Error("Test reference ID must parse.");
+    const referenceId = parsedReferenceId.value;
+    adapter.registrations.push(await registrationForOrigin(target));
+    storage.values.set(ORIGIN_INDEX_KEY, { corrupt: true });
+    storage.values.set(originRecordKey(target), { corrupt: true });
+    storage.values.set(imageRecordKey(referenceId), {
+      schemaVersion: 1,
+      referenceId,
+      dataUrl: "data:image/png;base64,aGVsbG8=",
+    });
+    const service = new SiteAccessService(adapter, new OverlayRepository(storage));
+
+    expect((await service.reconcile()).ok).toBe(false);
+    expect(adapter.registrations).toEqual([]);
+    expect(storage.values.get(originRecordKey(target))).toBeUndefined();
+    expect(storage.values.get(imageRecordKey(referenceId))).toBeUndefined();
+    expect(storage.values.get(ORIGIN_INDEX_KEY)).toEqual({
+      schemaVersion: 2,
+      origins: [],
+      imageIds: [],
+    });
+  });
+
   it("removes malformed and revoked managed registrations", async () => {
     const adapter = new FakeSiteAccessAdapter();
     adapter.registrations.push({

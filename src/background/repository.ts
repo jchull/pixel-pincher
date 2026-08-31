@@ -22,6 +22,7 @@ import {
 import {
   deriveOrigin,
   derivePageKey,
+  IMAGE_RECORD_KEY_PREFIX,
   imageRecordKey,
   isImageRecordKey,
   ORIGIN_INDEX_KEY,
@@ -34,6 +35,7 @@ import {
   parseOriginIndexV1,
   parseOriginIndexV2,
   parseOriginRecordV1,
+  parseReferenceId,
 } from "../shared/parse";
 import type { StorageAdapter } from "./storage-adapter";
 
@@ -354,7 +356,7 @@ export class OverlayRepository {
       this.#withMaintenance(async () => {
         try {
           if (await this.#purgeFromValidIndex(origin))
-            return { ok: true, value: undefined };
+            return this.#removeLegacyPages(origin);
         } catch (error: unknown) {
           if (!(error instanceof AppError) || error.code !== "invalid-stored-data")
             return repositoryFailure();
@@ -482,11 +484,13 @@ export class OverlayRepository {
       if (id !== null) owners.add(id);
       origins.push({ origin: record.value.origin, referenceId: id });
     }
-    for (const [key, value] of Object.entries(values)) {
+    for (const key of Object.keys(values)) {
       if (!isImageRecordKey(key)) continue;
-      const image = parseImageRecordV1(value);
-      if (image.ok && key === imageRecordKey(image.value.referenceId))
-        imageIds.add(image.value.referenceId);
+      const imageId = parseReferenceId(key.slice(IMAGE_RECORD_KEY_PREFIX.length));
+      // Image payloads are deliberately not parsed during migration. A canonical
+      // named key is enough to index corrupted payloads for later cleanup/purge.
+      if (imageId.ok && key === imageRecordKey(imageId.value))
+        imageIds.add(imageId.value);
     }
     const index = buildIndex(origins, [...imageIds]);
     await this.#adapter.set({ [ORIGIN_INDEX_KEY]: index });
@@ -570,6 +574,24 @@ export class OverlayRepository {
     ]);
     await this.#adapter.set({ [ORIGIN_INDEX_KEY]: nextIndex });
     return true;
+  }
+
+  /**
+   * V2 may coexist with obsolete page keys after an interrupted migration. This
+   * deletion-only scan keeps the valid-index path targeted for its metadata and
+   * image removal while guaranteeing that those legacy keys cannot survive.
+   */
+  async #removeLegacyPages(origin: Origin): Promise<Result<void, RepositoryError>> {
+    try {
+      const values = await this.#adapter.readAll();
+      const pageKeys = Object.keys(values).filter(
+        (key) => pageRecordKeyOrigin(key) === origin,
+      );
+      if (pageKeys.length > 0) await this.#adapter.remove(pageKeys);
+      return { ok: true, value: undefined };
+    } catch {
+      return repositoryFailure();
+    }
   }
 
   /** Explicit deletion recovery: malformed records never prevent target-origin removal. */

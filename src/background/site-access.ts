@@ -171,44 +171,44 @@ export class SiteAccessService {
   async reconcile(): Promise<Result<void, AccessError>> {
     return this.#exclusive(async () => {
       const stored = await this.#repository.listOrigins();
-      if (!stored.ok) return accessFailure("content-unavailable");
 
       try {
         const initialRegistrations = await this.#adapter.getRegistrations();
         const granted = new Set(await this.#adapter.getGrantedOrigins());
-        const storedOrigins = new Set(stored.value);
-        let firstFailure: Result<never, AccessError> | undefined;
+        const origins = new Set(stored.ok ? stored.value : []);
+        let firstFailure: Result<never, AccessError> | undefined = stored.ok
+          ? undefined
+          : accessFailure("content-unavailable");
         const rememberFailure = (result: Result<void, AccessError>): void => {
           if (!result.ok && firstFailure === undefined) firstFailure = result;
         };
 
-        for (const origin of stored.value) {
+        for (const registration of initialRegistrations) {
+          if (!registration.id.startsWith(OVERLAY_REGISTRATION_PREFIX)) continue;
+          const origin = registration.matches.length === 1
+            ? originFromMatch(registration.matches[0] ?? "")
+            : undefined;
+          if (origin === undefined || registration.id !== await registrationIdForOrigin(origin)) {
+            rememberFailure(await this.#unregisterRegistrationId(registration.id));
+            continue;
+          }
+          // A corrupt index cannot enumerate stored origins, but a managed
+          // registration still identifies a revoked origin that must be purged.
+          origins.add(origin);
+        }
+
+        for (const origin of origins) {
           if (granted.has(originMatch(origin))) {
+            // A managed registration plus a grant is explicit enabled-without-reference
+            // state. Repair its current packaged shape without creating repository data.
             rememberFailure(await this.#ensureOrigin(origin));
           } else {
             // Both operations are attempted even when the other fails so revocation
             // cannot leave storage behind because a registration is already absent/bad.
             rememberFailure(await this.#unregisterOrigin(origin));
             const cleared = await this.#repository.purgeOrigin(origin);
-            if (!cleared.ok && firstFailure === undefined) firstFailure = accessFailure("content-unavailable");
-          }
-        }
-
-        for (const registration of initialRegistrations) {
-          if (!registration.id.startsWith(OVERLAY_REGISTRATION_PREFIX)) continue;
-          const match = registration.matches.length === 1 ? originFromMatch(registration.matches[0] ?? "") : undefined;
-          if (match === undefined || registration.id !== await registrationIdForOrigin(match)) {
-            rememberFailure(await this.#unregisterRegistrationId(registration.id));
-            continue;
-          }
-          if (!granted.has(originMatch(match))) {
-            rememberFailure(await this.#unregisterOrigin(match));
-            continue;
-          }
-          if (!storedOrigins.has(match)) {
-            // A managed registration plus a grant is explicit enabled-without-reference
-            // state. Repair its current packaged shape without creating repository data.
-            rememberFailure(await this.#ensureOrigin(match));
+            if (!cleared.ok && firstFailure === undefined)
+              firstFailure = accessFailure("content-unavailable");
           }
         }
 
