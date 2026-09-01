@@ -198,10 +198,18 @@ export class ControlPanel {
     if (this.#destroyed) return;
     this.#destroyed = true;
     this.#cancelDrag();
+    this.#window.removeEventListener("resize", this.#handleResize);
+    this.#window.removeEventListener("keydown", this.#handleKeyDown);
+    this.#settingsInFlight = false;
+    this.#pendingSettings = [];
+    this.#placementIntent = undefined;
+    this.#referenceDataUrl = undefined;
+    this.#snapshot = undefined;
     this.#host.remove();
   }
 
   #render(): void {
+    if (this.#destroyed) return;
     const snapshot = this.#snapshot;
     if (snapshot === undefined) return;
     const e = this.#elements;
@@ -260,11 +268,11 @@ export class ControlPanel {
     void this.#hideOverlayAndPanel();
   };
   async #hideOverlayAndPanel(): Promise<void> {
-    await this.#send({
+    const result = await this.#send({
       kind: "update-settings",
       patch: { kind: "visibility", visible: false },
     });
-    this.#host.style.display = "none";
+    if (result.ok && !this.#destroyed) this.#host.style.display = "none";
   }
   #toggleCollapsed = (): void => {
     this.#collapsed = !this.#collapsed;
@@ -373,12 +381,14 @@ export class ControlPanel {
         });
         return;
       }
-      this.#referenceDataUrl = imported.value.dataUrl;
-      this.#render();
-      await this.#send({
+      const result = await this.#send({
         kind: "replace-reference",
         reference: imported.value,
       });
+      if (result.ok && result.snapshot !== undefined && !this.#destroyed) {
+        this.#referenceDataUrl = imported.value.dataUrl;
+        this.#render();
+      }
     } catch (error) {
       console.error("[Pixel Pincher] Reference import threw unexpectedly.", {
         error,
@@ -530,7 +540,11 @@ export class ControlPanel {
   };
 
   #queueSetting(patch: SettingsPatch, coalesce = false): void {
-    if (this.#snapshot?.reference === null || this.#request === undefined)
+    if (
+      this.#destroyed ||
+      this.#snapshot?.reference === null ||
+      this.#request === undefined
+    )
       return;
     const pending = { patch, coalesce };
     if (this.#settingsInFlight) {
@@ -547,12 +561,14 @@ export class ControlPanel {
   }
 
   async #dispatchSetting(pending: PendingSetting): Promise<void> {
+    if (this.#destroyed) return;
     this.#settingsInFlight = true;
     const result = await this.#send({
       kind: "update-settings",
       patch: pending.patch,
     });
     this.#settingsInFlight = false;
+    if (this.#destroyed) return;
     if (!result.ok) {
       this.#pendingSettings = [];
       this.#placementIntent = undefined;
@@ -586,6 +602,7 @@ export class ControlPanel {
   }
 
   async #send(request: PanelRequest): Promise<PanelMutationResult> {
+    if (this.#destroyed) return { ok: false };
     if (this.#request === undefined) {
       if (request.kind === "update-panel-position")
         this.#onPositionCommitted?.(request.panelPosition);
@@ -596,6 +613,7 @@ export class ControlPanel {
       const parsed = parseContentPanelResponse(
         await this.#request({ ...request, requestId }),
       );
+      if (this.#destroyed) return { ok: false };
       if (!parsed.ok || parsed.value.requestId !== requestId) {
         this.#showError({
           code: "invalid-request",
@@ -623,7 +641,7 @@ export class ControlPanel {
   }
 
   #showError(error: PublicError): void {
-    this.#elements.live.textContent = error.message;
+    if (!this.#destroyed) this.#elements.live.textContent = error.message;
   }
   #handlePointerDown = (event: PointerEvent): void => {
     if (event.button !== 0 || this.#snapshot === undefined) return;

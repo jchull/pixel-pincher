@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ControlPanel } from "../../src/content/control-panel";
 import {
@@ -103,6 +103,10 @@ describe("ControlPanel", () => {
     if (found === undefined) throw new Error("Expected drag handle.");
     return found;
   };
+
+  afterEach(() => {
+    panel.destroy();
+  });
 
   beforeEach(() => {
     document.getElementById("pixel-pincher-control-panel")?.remove();
@@ -287,8 +291,10 @@ describe("ControlPanel", () => {
         reference: imported,
       }),
     );
-    expect(dropTarget.style.getPropertyValue("--reference-image")).toBe(
-      `url("${dataUrl}")`,
+    await vi.waitFor(() =>
+      expect(dropTarget.style.getPropertyValue("--reference-image")).toBe(
+        `url("${dataUrl}")`,
+      ),
     );
     const opacity = byId<HTMLInputElement>("opacity");
     opacity.value = "30";
@@ -523,6 +529,139 @@ describe("ControlPanel", () => {
         .find((element) => element.getAttribute("role") === "status")
         ?.textContent,
     ).toBe(publicError("content-unavailable").message);
+  });
+
+  it("does not preview a replacement that the background rejects", async () => {
+    const oldDataUrl = "data:image/png;base64,AAAA";
+    const newDataUrl = "data:image/png;base64,AQID";
+    const imported = parse(
+      parseImportedReference({
+        metadata: { ...metadata, encodedBytes: newDataUrl.length },
+        dataUrl: newDataUrl,
+      }),
+    );
+    const send = vi.fn(async (request: { requestId: string }) => ({
+      requestId: request.requestId,
+      ok: false as const,
+      error: publicError("storage-failed"),
+    }));
+    const importer = vi.fn(async () => ({ ok: true as const, value: imported }));
+    panel.destroy();
+    panel = new ControlPanel({
+      window,
+      document,
+      request: send,
+      importReference: importer,
+    });
+    const currentSnapshot = snapshot(1);
+    if (currentSnapshot.reference === null)
+      throw new Error("Expected a reference snapshot.");
+    panel.hydrate({
+      snapshot: { ...currentSnapshot, reference: imported.metadata },
+      reference: { ...imported, dataUrl: oldDataUrl },
+    });
+    const file = [...elements]
+      .reverse()
+      .find((element) => element.id === "reference-file");
+    const dropTarget = [...elements]
+      .reverse()
+      .find((element) => element.id === "reference-drop-target");
+    if (!(file instanceof HTMLInputElement) || !(dropTarget instanceof HTMLElement))
+      throw new Error("Expected import controls.");
+    Object.defineProperty(file, "files", {
+      configurable: true,
+      value: [new File(["new"], "replacement.png", { type: "image/png" })],
+    });
+
+    file.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+    expect(dropTarget.style.getPropertyValue("--reference-image")).toBe(
+      `url("${oldDataUrl}")`,
+    );
+    expect(
+      [...elements]
+        .reverse()
+        .find((element) => element.getAttribute("role") === "status")
+        ?.textContent,
+    ).toBe(publicError("storage-failed").message);
+  });
+
+  it("keeps the panel visible when hiding the overlay fails", async () => {
+    const send = vi.fn(async (request: { requestId: string }) => ({
+      requestId: request.requestId,
+      ok: false as const,
+      error: publicError("content-unavailable"),
+    }));
+    panel.destroy();
+    panel = new ControlPanel({ window, document, request: send });
+    panel.apply(snapshot(1));
+    const host = document.querySelector<HTMLElement>(
+      "#pixel-pincher-control-panel",
+    );
+    const close = [...buttons].reverse().find((button) => button.id === "close-panel");
+    if (host === null || close === undefined) throw new Error("Expected panel.");
+
+    close.click();
+    await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+    expect(host.style.display).toBe("block");
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "update-settings",
+        patch: { kind: "visibility", visible: false },
+      }),
+    );
+    expect(
+      [...elements]
+        .reverse()
+        .find((element) => element.getAttribute("role") === "status")
+        ?.textContent,
+    ).toBe(publicError("content-unavailable").message);
+  });
+
+  it("removes global listeners, clears queued mutations, and is safe to destroy twice", async () => {
+    const first = deferred<unknown>();
+    const requests: ContentPanelRequest[] = [];
+    const send = vi.fn((request: ContentPanelRequest): Promise<unknown> => {
+      requests.push(request);
+      return first.promise;
+    });
+    panel.destroy();
+    panel = new ControlPanel({ window, document, request: send });
+    panel.apply(snapshot(1));
+    const host = document.querySelector<HTMLElement>(
+      "#pixel-pincher-control-panel",
+    );
+    const x = [...elements]
+      .reverse()
+      .find((element) => element.id === "x");
+    const y = [...elements]
+      .reverse()
+      .find((element) => element.id === "y");
+    if (host === null || !(x instanceof HTMLInputElement) || !(y instanceof HTMLInputElement))
+      throw new Error("Expected panel controls.");
+    x.value = "12";
+    x.dispatchEvent(new Event("input"));
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    y.value = "30";
+    y.dispatchEvent(new Event("input"));
+    const leftBeforeDestroy = host.style.left;
+
+    panel.destroy();
+    panel.destroy();
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 10,
+    });
+    window.dispatchEvent(new Event("resize"));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(host.style.left).toBe(leftBeforeDestroy);
+
+    const request = requests[0];
+    if (request === undefined) throw new Error("Expected queued mutation.");
+    first.resolve({ requestId: request.requestId, ok: true, value: snapshot(2) });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(requests).toHaveLength(1);
   });
 
   it("clamps persisted positions to keep its handle reachable", () => {
