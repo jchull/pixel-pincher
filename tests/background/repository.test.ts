@@ -353,6 +353,18 @@ describe("OverlayRepository V2 index", () => {
     expect(storage.values["pixel-pincher:page:https%3A%2F%2Ftarget.test%2Fpage"]).toBeUndefined();
   });
 
+  it("keeps metadata-absent purges idempotent without reading storage values", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    const target = originFor(url);
+
+    await expect(repository.purgeOrigin(target)).resolves.toEqual({ ok: true, value: undefined });
+    await expect(repository.purgeOrigin(target)).resolves.toEqual({ ok: true, value: undefined });
+    expect(storage.readAllCalls).toBe(0);
+    expect(storage.keyListings).toHaveLength(0);
+    expect(storage.removes).toEqual([]);
+  });
+
   it("removes target legacy pages through a key-only valid-index purge", async () => {
     const storage = new MemoryStorage();
     const repository = new OverlayRepository(storage);

@@ -24,6 +24,7 @@ export default defineConfig({
         "script-src 'self'; object-src 'self'; img-src 'self' blob: data:",
     },
     incognito: "not_allowed",
+    minimum_chrome_version: "130",
     optional_host_permissions: ["http://*/*", "https://*/*"],
     commands: {
       "toggle-visibility": {

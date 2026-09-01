@@ -13,6 +13,7 @@ const expectedPermissions = [
   "webNavigation",
 ];
 const expectedOptionalOrigins = ["http://*/*", "https://*/*"];
+const expectedMinimumChromeVersion = "130";
 const iconSizes = ["16", "32", "48", "128"];
 
 async function readJson(path, description) {
@@ -116,6 +117,10 @@ if (!hasExactStrings(manifest.optional_host_permissions, expectedOptionalOrigins
 
 if (manifest.incognito !== "not_allowed") {
   throw new Error("Manifest must set incognito to not_allowed.");
+}
+
+if (manifest.minimum_chrome_version !== expectedMinimumChromeVersion) {
+  throw new Error(`Manifest minimum_chrome_version must be ${expectedMinimumChromeVersion}.`);
 }
 
 await assertPackageAsset(manifest.background?.service_worker, "Manifest service worker");

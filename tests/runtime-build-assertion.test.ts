@@ -8,18 +8,21 @@ const assertionScript = resolve("scripts/assert-runtime-build.mjs");
 
 type FixtureOptions = Readonly<{
   manifestVersion?: string;
+  minimumChromeVersion?: string;
   omitPopupAsset?: boolean;
 }>;
 
 async function createFixture(options: FixtureOptions = {}) {
   const directory = await mkdtemp(join(tmpdir(), "pixel-pincher-runtime-build-"));
   const manifestVersion = options.manifestVersion ?? "0.1.0";
+  const minimumChromeVersion = options.minimumChromeVersion ?? "130";
   const files = [
     ["package.json", JSON.stringify({ version: "0.1.0" })],
     [
       "dist/chrome-mv3/manifest.json",
       JSON.stringify({
         version: manifestVersion,
+        minimum_chrome_version: minimumChromeVersion,
         permissions: ["activeTab", "scripting", "storage", "unlimitedStorage", "webNavigation"],
         optional_host_permissions: ["http://*/*", "https://*/*"],
         incognito: "not_allowed",
@@ -86,6 +89,18 @@ describe("runtime build assertion", () => {
       expect(result.stderr).toContain(
         "Package and generated manifest versions must match: 0.1.0 !== 0.1.1.",
       );
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("reports a minimum Chrome version below the supported floor deterministically", async () => {
+    const { directory } = await createFixture({ minimumChromeVersion: "129" });
+
+    try {
+      const result = runAssertion(directory);
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("Manifest minimum_chrome_version must be 130.");
     } finally {
       await rm(directory, { force: true, recursive: true });
     }

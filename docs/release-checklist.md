@@ -10,8 +10,9 @@ from unit tests or a successful build.
 - Release version: `____________`
 - Candidate commit: `____________`
 - Build date and operator: `____________`
+- Supported browser floor: Chrome/Chromium 130
 - Chrome stable version and platform: `____________`
-- Other Chromium browser, version, and platform: `____________`
+- Other Chromium browser, version and platform (130 or later): `____________`
 - Chrome result: **Not executed — requires manual browser interaction.**
 - Other Chromium result: **Not executed — requires manual browser interaction.**
 - Store package SHA-256: `____________`
@@ -47,7 +48,8 @@ upgrade or migrate WXT before extending the deadline.
       `manifest.json` has the same version). Do not release with a dirty worktree.
 - [ ] Run `pnpm install --frozen-lockfile`, `pnpm check`, `pnpm lint`,
       `pnpm test`, and `pnpm build`; attach their logs to the release record.
-- [ ] Inspect `dist/chrome-mv3/manifest.json`. It must have no required
+- [ ] Inspect `dist/chrome-mv3/manifest.json`. It must declare
+      `minimum_chrome_version` exactly `130`, have no required
       `host_permissions`; optional hosts must be only `http://*/*` and
       `https://*/*`; permissions must be `activeTab`, `storage`,
       `unlimitedStorage`, `scripting`, and `webNavigation`; and incognito must
