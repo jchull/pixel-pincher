@@ -552,8 +552,10 @@ export class OverlayRepository {
     const values = await this.#adapter.get([key]);
     const value = values[key];
     if (value === undefined) {
-      if (entry !== undefined) return false;
-      return true;
+      // An absent target record cannot prove that no target pages or orphaned
+      // images remain after an interrupted or externally corrupted deletion.
+      // Deletion is the only path allowed to scan those residual values.
+      return false;
     }
     const record = parseOriginRecordV1(value);
     if (

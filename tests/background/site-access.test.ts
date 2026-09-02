@@ -427,6 +427,31 @@ describe("SiteAccessService", () => {
     expect(cleared).toEqual([origin]);
   });
 
+  it("purges revoked data before unregistering and retains registration when purge fails for retry", async () => {
+    const adapter = new FakeSiteAccessAdapter();
+    const origin = getOrigin(new URL("https://example.com/page"));
+    const registration = await registrationForOrigin(origin);
+    adapter.registrations.push(registration);
+    let attempts = 0;
+    const repository: Pick<OverlayRepository, "purgeOrigin" | "listOrigins"> = {
+      async purgeOrigin() {
+        expect(adapter.registrations).toEqual([registration]);
+        attempts += 1;
+        return attempts === 1
+          ? { ok: false as const, error: new AppError("storage-failed") }
+          : { ok: true as const, value: undefined };
+      },
+      async listOrigins() { return { ok: true, value: [origin] }; },
+    };
+    const service = new SiteAccessService(adapter, repository);
+
+    expect((await service.reconcile()).ok).toBe(false);
+    expect(adapter.registrations).toEqual([registration]);
+    await expect(service.reconcile()).resolves.toEqual({ ok: true, value: undefined });
+    expect(attempts).toBe(2);
+    expect(adapter.registrations).toEqual([]);
+  });
+
   it("continues clearing later revoked origins after an earlier clear failure", async () => {
     const adapter = new FakeSiteAccessAdapter();
     const first = getOrigin(new URL("https://first.example/page"));

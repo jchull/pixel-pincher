@@ -353,16 +353,37 @@ describe("OverlayRepository V2 index", () => {
     expect(storage.values["pixel-pincher:page:https%3A%2F%2Ftarget.test%2Fpage"]).toBeUndefined();
   });
 
-  it("keeps metadata-absent purges idempotent without reading storage values", async () => {
+  it("recovers metadata-absent purge residuals while preserving unrelated owned images", async () => {
     const storage = new MemoryStorage();
     const repository = new OverlayRepository(storage);
-    const target = originFor(url);
+    const target = originFor(new URL("https://target.test/page"));
+    const otherUrl = new URL("https://other.test/page");
+    const other = originFor(otherUrl);
+    const otherReference = reference({ id: "123e4567-e89b-42d3-a456-426614174009" });
+    const orphanId = reference({ id: "123e4567-e89b-42d3-a456-426614174010" }).metadata.id;
+    await repository.replaceReference({ url: otherUrl, reference: otherReference });
+    storage.values["pixel-pincher:page:https%3A%2F%2Ftarget.test%2Fpage"] = {
+      legacy: true,
+    };
+    storage.values[imageRecordKey(orphanId)] = {
+      schemaVersion: 1,
+      referenceId: orphanId,
+      dataUrl: "data:image/png;base64,aGVsbG8=",
+    };
+    storage.resetCalls();
 
     await expect(repository.purgeOrigin(target)).resolves.toEqual({ ok: true, value: undefined });
     await expect(repository.purgeOrigin(target)).resolves.toEqual({ ok: true, value: undefined });
-    expect(storage.readAllCalls).toBe(0);
-    expect(storage.keyListings).toHaveLength(0);
-    expect(storage.removes).toEqual([]);
+    expect(storage.readAllCalls).toBe(2);
+    expect(storage.values["pixel-pincher:page:https%3A%2F%2Ftarget.test%2Fpage"]).toBeUndefined();
+    expect(storage.values[imageRecordKey(orphanId)]).toBeUndefined();
+    expect(storage.values[originRecordKey(other)]).toBeDefined();
+    expect(storage.values[imageRecordKey(otherReference.metadata.id)]).toBeDefined();
+    expect(storage.values[ORIGIN_INDEX_KEY]).toEqual({
+      schemaVersion: 2,
+      origins: [{ origin: other, referenceId: otherReference.metadata.id }],
+      imageIds: [otherReference.metadata.id],
+    });
   });
 
   it("removes target legacy pages through a key-only valid-index purge", async () => {

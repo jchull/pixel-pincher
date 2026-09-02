@@ -203,12 +203,15 @@ export class SiteAccessService {
             // state. Repair its current packaged shape without creating repository data.
             rememberFailure(await this.#ensureOrigin(origin));
           } else {
-            // Both operations are attempted even when the other fails so revocation
-            // cannot leave storage behind because a registration is already absent/bad.
-            rememberFailure(await this.#unregisterOrigin(origin));
+            // Keep the registration when deletion fails. It gives the next
+            // reconciliation a durable revoked-origin identity to retry.
             const cleared = await this.#repository.purgeOrigin(origin);
-            if (!cleared.ok && firstFailure === undefined)
-              firstFailure = accessFailure("content-unavailable");
+            if (!cleared.ok) {
+              if (firstFailure === undefined)
+                firstFailure = accessFailure("content-unavailable");
+              continue;
+            }
+            rememberFailure(await this.#unregisterOrigin(origin));
           }
         }
 
