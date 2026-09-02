@@ -313,6 +313,15 @@ describe("boundary parsers", () => {
         schemaVersion: 2,
         origins: [
           { origin: "https://example.com", referenceId: id },
+        ],
+        imageIds: [],
+      }).ok,
+    ).toBe(false);
+    expect(
+      parseOriginIndexV2({
+        schemaVersion: 2,
+        origins: [
+          { origin: "https://example.com", referenceId: id },
           { origin: "https://other.example", referenceId: id },
         ],
         imageIds: [id],

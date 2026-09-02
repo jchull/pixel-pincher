@@ -479,6 +479,44 @@ describe("OverlayRepository V2 index", () => {
     });
   });
 
+  it("recovers an index that omits its target reference from image IDs", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    const target = originFor(new URL("https://target.test/page"));
+    const otherUrl = new URL("https://other.test/page");
+    const other = originFor(otherUrl);
+    const targetReference = reference({ id: "123e4567-e89b-42d3-a456-426614174013" });
+    const otherReference = reference({ id: "123e4567-e89b-42d3-a456-426614174014" });
+    await repository.replaceReference({ url: otherUrl, reference: otherReference });
+    storage.values[originRecordKey(target)] = originRecord(target, targetReference);
+    storage.values[imageRecordKey(targetReference.metadata.id)] = {
+      schemaVersion: 1,
+      referenceId: targetReference.metadata.id,
+      dataUrl: targetReference.dataUrl,
+    };
+    storage.values[ORIGIN_INDEX_KEY] = {
+      schemaVersion: 2,
+      origins: [
+        { origin: other, referenceId: otherReference.metadata.id },
+        { origin: target, referenceId: targetReference.metadata.id },
+      ].sort((left, right) => left.origin.localeCompare(right.origin)),
+      imageIds: [otherReference.metadata.id],
+    };
+    storage.resetCalls();
+
+    await expect(repository.purgeOrigin(target)).resolves.toEqual({ ok: true, value: undefined });
+    expect(storage.readAllCalls).toBe(1);
+    expect(storage.values[originRecordKey(target)]).toBeUndefined();
+    expect(storage.values[imageRecordKey(targetReference.metadata.id)]).toBeUndefined();
+    expect(storage.values[originRecordKey(other)]).toBeDefined();
+    expect(storage.values[imageRecordKey(otherReference.metadata.id)]).toBeDefined();
+    expect(storage.values[ORIGIN_INDEX_KEY]).toEqual({
+      schemaVersion: 2,
+      origins: [{ origin: other, referenceId: otherReference.metadata.id }],
+      imageIds: [otherReference.metadata.id],
+    });
+  });
+
   it("recovers from a corrupt index, is idempotent after partial cleanup, and removes target legacy pages", async () => {
     const storage = new MemoryStorage();
     const repository = new OverlayRepository(storage);

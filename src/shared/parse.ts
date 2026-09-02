@@ -1017,5 +1017,10 @@ export function parseOriginIndexV2(
     imageIds.push(imageId.value);
     previousImageId = imageId.value;
   }
+  const indexedImageIds = new Set(imageIds);
+  for (const ownedImageId of ownedImageIds) {
+    if (!indexedImageIds.has(ownedImageId))
+      return failure("invalid-stored-data");
+  }
   return { ok: true, value: { schemaVersion: 2, origins, imageIds } };
 }
