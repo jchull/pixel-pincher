@@ -18,17 +18,18 @@ class MemoryStorage implements StorageAdapter {
   readonly removes: string[][] = [];
   readAllCalls = 0;
   #setCalls = 0;
-  #failSetCall: number | undefined;
+  #removeCalls = 0;
+  #failSetCalls = new Set<number>();
   #failNextGetKeys = false;
   #failNextReadAll = false;
-  #failNextRemove = false;
+  #failRemoveCalls = new Set<number>();
 
   failSetOn(call: number): void {
-    this.#failSetCall = call;
+    this.#failSetCalls.add(call);
   }
 
   failNextSet(): void {
-    this.#failSetCall = this.#setCalls + 1;
+    this.failSetOn(this.#setCalls + 1);
   }
 
   failNextGetKeys(): void {
@@ -39,8 +40,12 @@ class MemoryStorage implements StorageAdapter {
     this.#failNextReadAll = true;
   }
 
+  failRemoveOn(call: number): void {
+    this.#failRemoveCalls.add(call);
+  }
+
   failNextRemove(): void {
-    this.#failNextRemove = true;
+    this.failRemoveOn(this.#removeCalls + 1);
   }
 
   resetCalls(): void {
@@ -79,17 +84,16 @@ class MemoryStorage implements StorageAdapter {
 
   async set(values: Readonly<Record<string, unknown>>): Promise<void> {
     this.#setCalls += 1;
-    if (this.#setCalls === this.#failSetCall)
+    if (this.#failSetCalls.delete(this.#setCalls))
       throw new Error("planned set failure");
     this.writes.push({ ...values });
     Object.assign(this.values, values);
   }
 
   async remove(keys: readonly string[]): Promise<void> {
-    if (this.#failNextRemove) {
-      this.#failNextRemove = false;
+    this.#removeCalls += 1;
+    if (this.#failRemoveCalls.delete(this.#removeCalls))
       throw new Error("planned remove failure");
-    }
     this.removes.push([...keys]);
     for (const key of keys) delete this.values[key];
   }
@@ -283,13 +287,139 @@ describe("OverlayRepository V2 index", () => {
       [ORIGIN_INDEX_KEY]: {
         schemaVersion: 2,
         origins: [{ origin: originFor(url), referenceId: second.metadata.id }],
-        imageIds: [second.metadata.id],
+        imageIds: [first.metadata.id, second.metadata.id].sort(),
       },
       [originRecordKey(originFor(url))]: expect.any(Object),
       [imageRecordKey(second.metadata.id)]: expect.any(Object),
     }));
     expect(storage.removes).toEqual([[imageRecordKey(first.metadata.id)]]);
+    expect(storage.writes[1]).toEqual({
+      [ORIGIN_INDEX_KEY]: {
+        schemaVersion: 2,
+        origins: [{ origin: originFor(url), referenceId: second.metadata.id }],
+        imageIds: [second.metadata.id],
+      },
+    });
     expect(storage.values[imageRecordKey(first.metadata.id)]).toBeUndefined();
+  });
+
+  it("keeps both image IDs discoverable after an interrupted replacement and clears both", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    const origin = originFor(url);
+    const first = reference();
+    const second = reference({ id: "123e4567-e89b-42d3-a456-426614174011" });
+    await repository.replaceReference({ url, reference: first });
+
+    // Reconstruct the durable state after replacement's metadata write but
+    // before its old-image remove phase, as if the worker were interrupted.
+    storage.values[originRecordKey(origin)] = {
+      ...originRecord(origin, second),
+      revision: 2,
+    };
+    storage.values[imageRecordKey(second.metadata.id)] = {
+      schemaVersion: 1,
+      referenceId: second.metadata.id,
+      dataUrl: second.dataUrl,
+    };
+    storage.values[ORIGIN_INDEX_KEY] = {
+      schemaVersion: 2,
+      origins: [{ origin, referenceId: second.metadata.id }],
+      imageIds: [first.metadata.id, second.metadata.id].sort(),
+    };
+
+    await expect(repository.cleanupOrphans()).resolves.toEqual({ ok: true, value: undefined });
+    expect(storage.values[imageRecordKey(first.metadata.id)]).toBeUndefined();
+    expect(storage.values[imageRecordKey(second.metadata.id)]).toBeDefined();
+
+    // The same interrupted state must be fully removable by user clear or
+    // permission-revocation purge, not just maintenance cleanup.
+    storage.values[imageRecordKey(first.metadata.id)] = {
+      schemaVersion: 1,
+      referenceId: first.metadata.id,
+      dataUrl: first.dataUrl,
+    };
+    storage.values[ORIGIN_INDEX_KEY] = {
+      schemaVersion: 2,
+      origins: [{ origin, referenceId: second.metadata.id }],
+      imageIds: [first.metadata.id, second.metadata.id].sort(),
+    };
+    await expect(repository.purgeOrigin(origin)).resolves.toEqual({ ok: true, value: undefined });
+    expect(storage.values[originRecordKey(origin)]).toBeUndefined();
+    expect(storage.values[imageRecordKey(first.metadata.id)]).toBeUndefined();
+    expect(storage.values[imageRecordKey(second.metadata.id)]).toBeUndefined();
+  });
+
+  it("keeps both image IDs discoverable when replacement cleanup or rollback phases fail", async () => {
+    const first = reference();
+    const second = reference({ id: "123e4567-e89b-42d3-a456-426614174012" });
+
+    const cleanupFailureStorage = new MemoryStorage();
+    const cleanupFailureRepository = new OverlayRepository(cleanupFailureStorage);
+    await cleanupFailureRepository.replaceReference({ url, reference: first });
+    cleanupFailureStorage.failSetOn(3);
+    await expect(cleanupFailureRepository.replaceReference({ url, reference: second })).resolves.toMatchObject({
+      ok: false,
+      error: { code: "storage-failed" },
+    });
+    expect(cleanupFailureStorage.values[ORIGIN_INDEX_KEY]).toMatchObject({
+      imageIds: [first.metadata.id, second.metadata.id].sort(),
+    });
+    expect(cleanupFailureStorage.values[imageRecordKey(first.metadata.id)]).toBeUndefined();
+    await expect(cleanupFailureRepository.cleanupOrphans()).resolves.toEqual({ ok: true, value: undefined });
+    expect(cleanupFailureStorage.values[ORIGIN_INDEX_KEY]).toMatchObject({
+      imageIds: [second.metadata.id],
+    });
+
+    const rollbackWriteFailureStorage = new MemoryStorage();
+    const rollbackWriteFailureRepository = new OverlayRepository(rollbackWriteFailureStorage);
+    await rollbackWriteFailureRepository.replaceReference({ url, reference: first });
+    rollbackWriteFailureStorage.failNextRemove();
+    rollbackWriteFailureStorage.failSetOn(3);
+    await expect(rollbackWriteFailureRepository.replaceReference({ url, reference: second })).resolves.toMatchObject({
+      ok: false,
+      error: { code: "storage-failed" },
+    });
+    expect(rollbackWriteFailureStorage.values[ORIGIN_INDEX_KEY]).toMatchObject({
+      imageIds: [first.metadata.id, second.metadata.id].sort(),
+    });
+    await expect(rollbackWriteFailureRepository.cleanupOrphans()).resolves.toEqual({ ok: true, value: undefined });
+    expect(rollbackWriteFailureStorage.values[imageRecordKey(first.metadata.id)]).toBeUndefined();
+
+    const rollbackRemoveFailureStorage = new MemoryStorage();
+    const rollbackRemoveFailureRepository = new OverlayRepository(rollbackRemoveFailureStorage);
+    await rollbackRemoveFailureRepository.replaceReference({ url, reference: first });
+    rollbackRemoveFailureStorage.failRemoveOn(1);
+    rollbackRemoveFailureStorage.failRemoveOn(2);
+    await expect(rollbackRemoveFailureRepository.replaceReference({ url, reference: second })).resolves.toMatchObject({
+      ok: false,
+      error: { code: "storage-failed" },
+    });
+    expect(rollbackRemoveFailureStorage.values[ORIGIN_INDEX_KEY]).toMatchObject({
+      origins: [{ origin: originFor(url), referenceId: first.metadata.id }],
+      imageIds: [first.metadata.id, second.metadata.id].sort(),
+    });
+    await expect(rollbackRemoveFailureRepository.cleanupOrphans()).resolves.toEqual({ ok: true, value: undefined });
+    expect(rollbackRemoveFailureStorage.values[imageRecordKey(second.metadata.id)]).toBeUndefined();
+
+    const rollbackFinalizationFailureStorage = new MemoryStorage();
+    const rollbackFinalizationFailureRepository = new OverlayRepository(rollbackFinalizationFailureStorage);
+    await rollbackFinalizationFailureRepository.replaceReference({ url, reference: first });
+    rollbackFinalizationFailureStorage.failNextRemove();
+    rollbackFinalizationFailureStorage.failSetOn(4);
+    await expect(rollbackFinalizationFailureRepository.replaceReference({ url, reference: second })).resolves.toMatchObject({
+      ok: false,
+      error: { code: "storage-failed" },
+    });
+    expect(rollbackFinalizationFailureStorage.values[ORIGIN_INDEX_KEY]).toMatchObject({
+      origins: [{ origin: originFor(url), referenceId: first.metadata.id }],
+      imageIds: [first.metadata.id, second.metadata.id].sort(),
+    });
+    expect(rollbackFinalizationFailureStorage.values[imageRecordKey(second.metadata.id)]).toBeUndefined();
+    await expect(rollbackFinalizationFailureRepository.cleanupOrphans()).resolves.toEqual({ ok: true, value: undefined });
+    expect(rollbackFinalizationFailureStorage.values[ORIGIN_INDEX_KEY]).toMatchObject({
+      imageIds: [first.metadata.id],
+    });
   });
 
   it("rolls back records and V2 membership when old-image removal fails", async () => {

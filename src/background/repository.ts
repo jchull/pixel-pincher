@@ -314,15 +314,17 @@ export class OverlayRepository {
             ? {}
             : { panelPosition: state.originRecord.panelPosition }),
         };
-        const nextIndex = this.#indexWithOrigin(
+        // Keep every physical image ID indexed until its remove call succeeds.
+        // This makes either image reachable by cleanup or purge if the worker is
+        // interrupted between replacement phases.
+        const replacementIndex = this.#indexWithOrigin(
           state.index,
           state.origin,
           nextId,
-          previousId,
         );
         await this.#adapter.set({
           [originRecordKey(state.origin)]: origin,
-          [ORIGIN_INDEX_KEY]: nextIndex,
+          [ORIGIN_INDEX_KEY]: replacementIndex,
           ...(existingValue === undefined
             ? {
                 [nextImageKey]: {
@@ -337,9 +339,18 @@ export class OverlayRepository {
           try {
             await this.#adapter.remove([imageRecordKey(previousId)]);
           } catch {
-            await this.#rollbackReplacement(state, nextId);
+            await this.#rollbackReplacement(state, replacementIndex, nextId);
             throw new AppError("storage-failed");
           }
+          // Removing the old ID from the index is deliberately a separate
+          // cleanup phase. If it fails, the stale (but indexed) ID is harmless
+          // and a later cleanup/purge removes it without losing discoverability.
+          await this.#adapter.set({
+            [ORIGIN_INDEX_KEY]: this.#indexWithoutImage(
+              replacementIndex,
+              previousId,
+            ),
+          });
         }
         return { ...before, revision: origin.revision, reference: input.reference.metadata };
       } catch (error: unknown) {
@@ -521,7 +532,6 @@ export class OverlayRepository {
         index,
         state.origin,
         referenceId(origin),
-        referenceId(state.originRecord),
       ),
     });
   }
@@ -530,22 +540,38 @@ export class OverlayRepository {
     index: OriginIndexV2,
     origin: Origin,
     nextReferenceId: ReferenceId | null,
-    previousReferenceId: ReferenceId | null,
   ): OriginIndexV2 {
     const origins = [
       ...index.origins.filter((entry) => entry.origin !== origin),
       { origin, referenceId: nextReferenceId },
     ];
     const imageIds = new Set(index.imageIds);
-    if (previousReferenceId !== null && previousReferenceId !== nextReferenceId)
-      imageIds.delete(previousReferenceId);
     if (nextReferenceId !== null) imageIds.add(nextReferenceId);
     return buildIndex(origins, [...imageIds]);
   }
 
-  async #rollbackReplacement(state: LoadedState, nextId: ReferenceId): Promise<void> {
+  #indexWithoutImage(index: OriginIndexV2, id: ReferenceId): OriginIndexV2 {
+    return buildIndex(
+      index.origins,
+      index.imageIds.filter((imageId) => imageId !== id),
+    );
+  }
+
+  async #rollbackReplacement(
+    state: LoadedState,
+    replacementIndex: OriginIndexV2,
+    nextId: ReferenceId,
+  ): Promise<void> {
+    // Restore metadata first, but retain the replacement ID in the index until
+    // its bytes are actually gone. A failed rollback can therefore be resumed
+    // by cleanupOrphans or any clear/revocation purge.
+    const rollbackIndex = this.#indexWithOrigin(
+      replacementIndex,
+      state.origin,
+      referenceId(state.originRecord),
+    );
     const restored: Record<string, unknown> = {
-      [ORIGIN_INDEX_KEY]: state.index,
+      [ORIGIN_INDEX_KEY]: rollbackIndex,
     };
     if (state.originRecord !== null)
       restored[originRecordKey(state.origin)] = state.originRecord;
@@ -554,6 +580,7 @@ export class OverlayRepository {
       ...(state.originRecord === null ? [originRecordKey(state.origin)] : []),
       imageRecordKey(nextId),
     ]);
+    await this.#adapter.set({ [ORIGIN_INDEX_KEY]: state.index });
   }
 
   /** Returns false only when malformed target metadata requires the deletion scan. */
@@ -578,10 +605,20 @@ export class OverlayRepository {
     ) {
       return false;
     }
-    const nextIndex = buildIndex(
-      index.origins.filter((candidate) => candidate.origin !== origin),
-      index.imageIds.filter((id) => id !== entry.referenceId),
+    const remainingOrigins = index.origins.filter(
+      (candidate) => candidate.origin !== origin,
     );
+    const remainingImageIds = new Set(
+      remainingOrigins.flatMap((candidate) =>
+        candidate.referenceId === null ? [] : [candidate.referenceId],
+      ),
+    );
+    // Replacement interruptions retain the previous ID in imageIds until its
+    // remove phase completes. Clear/revocation must remove those bytes too.
+    const imageIdsToRemove = index.imageIds.filter(
+      (id) => !remainingImageIds.has(id),
+    );
+    const nextIndex = buildIndex(remainingOrigins, [...remainingImageIds]);
     // Key enumeration exposes names only, so cleanup can remove every obsolete
     // unpublished-record key without materializing unrelated image payloads.
     const obsoleteKeys = (await this.#adapter.getKeys()).filter((key) =>
@@ -589,7 +626,7 @@ export class OverlayRepository {
     );
     await this.#adapter.remove([
       key,
-      ...(entry.referenceId === null ? [] : [imageRecordKey(entry.referenceId)]),
+      ...imageIdsToRemove.map(imageRecordKey),
       ...obsoleteKeys,
     ]);
     await this.#adapter.set({ [ORIGIN_INDEX_KEY]: nextIndex });
