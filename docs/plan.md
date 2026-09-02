@@ -6,7 +6,7 @@ This plan is ready for implementation. Complete tasks in dependency order and ke
 
 ## Product goal
 
-Pixel Pincher is a browser extension for aligning a reference design with a live web page. A developer imports an image, places it over the page, adjusts its transparency and size, optionally inverts its colors, and moves it by dragging or exact pixel increments.
+Pixel Pincher is a browser extension for aligning a reference design with a live web page. A developer uses the in-page control panel to import an image, place it over the page, adjust its transparency and size, optionally invert its colors, and move it by dragging or exact pixel increments.
 
 The first release targets Chromium browsers with Manifest V3. A later release converts the tested Chromium build to a Safari Web Extension.
 
@@ -84,13 +84,13 @@ Use WXT, TypeScript, native DOM APIs, and CSS. Do not add a UI framework for the
 | Site access | `src/background/site-access.ts` | Optional permission requests, runtime script registration, and reconciliation. |
 | Coordination | `entrypoints/background.ts`, `src/background/coordinator.ts` | Popup requests, content events, commands, navigation, and tab messaging. |
 | Page overlay | `entrypoints/overlay.content.ts`, `src/content/overlay-controller.ts` | Shadow DOM, rendering, scrolling, resizing, and dragging. |
-| Popup | `entrypoints/popup.html`, `entrypoints/popup/main.ts`, `entrypoints/popup/style.css`, `src/popup/*` | Import, controls, status, and typed requests. |
+| Popup | `entrypoints/popup.html`, `entrypoints/popup/main.ts`, `entrypoints/popup/style.css`, `src/popup/popup-controller.ts` | Active-tab access bootstrap, corrupt-data recovery, and in-page panel visibility. |
 | Tests | `src/**/*.test.ts`, `tests/fixtures/*` | Contract, repository, controller, popup, and coordinator tests. |
 
 ### Dependency rules
 
 - `src/shared` imports no popup, content, background, WXT, or Chrome modules.
-- Popup and content code depend on shared contracts, not on each other.
+- Popup and content code depend on shared contracts, not on each other. Pure image import lives in `src/shared/image-import.ts`.
 - Only background repository modules know storage key strings.
 - Only the background site-access module knows runtime content-script registration details.
 - Only the content controller edits page DOM.
@@ -102,7 +102,7 @@ Use branded strings after boundary validation so origins, page keys, and referen
 
 ```ts
 type Origin = string & { readonly __brand: 'Origin' };
-type PageKey = string & { readonly __brand: 'PageKey' };
+type PageKey = string & { readonly __brand: 'PageKey' }; // delivery identity only; never a storage record
 type ReferenceId = string & { readonly __brand: 'ReferenceId' };
 
 type Placement = Readonly<{ x: number; y: number }>;
@@ -143,7 +143,7 @@ Defaults are visible, 50% opacity, normal colors, placement `{ x: 0, y: 0 }`, fi
 
 Clamp opacity to the inclusive range 0 through 1. Scale percent must be an integer from 10 through 600. Placement values must be finite integers within `-1_000_000` through `1_000_000`. Image dimensions must be positive integers, and `width * height` must not exceed 40 million pixels.
 
-`revision` increases after every committed origin or page mutation. The content controller ignores messages with a revision lower than its current revision. Equal revisions are safe to apply again.
+`revision` increases after every committed origin mutation. The content controller ignores messages with a revision lower than its current revision. Equal revisions are safe to apply again.
 
 ### Persistence records
 
@@ -156,14 +156,6 @@ type OriginRecordV1 = Readonly<{
   reference: ReferenceMetadata | null;
 }>;
 
-type PageRecordV1 = Readonly<{
-  schemaVersion: 1;
-  revision: number;
-  origin: Origin;
-  pageKey: PageKey;
-  placement: Placement;
-}>;
-
 type ImageRecordV1 = Readonly<{
   schemaVersion: 1;
   referenceId: ReferenceId;
@@ -174,10 +166,9 @@ type ImageRecordV1 = Readonly<{
 Use these storage keys:
 
 - `pixel-pincher:origin:<encoded-origin>`
-- `pixel-pincher:page:<encoded-page-key>`
 - `pixel-pincher:image:<reference-id>`
 
-Encode variable key segments with `encodeURIComponent`. Never scan keys to read one snapshot. Maintain an origin index under `pixel-pincher:origins` for reconciliation and origin cleanup.
+Encode variable key segments with `encodeURIComponent`. Never scan keys to read one snapshot. Maintain an origin index under `pixel-pincher:origins` for reconciliation and origin cleanup. Cleanup removes any obsolete `pixel-pincher:page:` keys left by unpublished builds without parsing them.
 
 Write a replacement reference in this order:
 
@@ -185,7 +176,7 @@ Write a replacement reference in this order:
 2. Write the origin record with the new metadata and incremented revision.
 3. Delete the previous image record.
 
-If step 2 fails, delete the new image record and keep the previous origin record. Cleanup on startup removes orphan image records left by interruption. Clearing an origin removes its origin record, image record, page records, index entry, and runtime content-script registration.
+If step 2 fails, delete the new image record and keep the previous origin record. Cleanup on startup removes orphan image records left by interruption. Clearing an origin removes its origin record, image record, index entry, and runtime content-script registration.
 
 Malformed or unknown record versions produce `invalid-stored-data`. Do not silently replace a corrupt record with defaults. The popup must tell the user that clearing the site's data is required.
 
@@ -284,7 +275,7 @@ Do not expose raw Chrome error strings in popup text. Log the raw cause in devel
 2. It rejects missing URLs and schemes other than HTTP or HTTPS.
 3. It derives the origin and checks optional permission state.
 4. Without access, it renders the no-access state and an **Enable on this site** action.
-5. With access, it reads and renders the snapshot. No image payload enters the popup unless the user imports a new file.
+5. With access, it confirms the enabled state and offers the in-page panel toggle. Reference data and overlay controls remain in the page.
 
 ### Enable a site
 
@@ -296,24 +287,22 @@ Do not expose raw Chrome error strings in popup text. Log the raw cause in devel
 
 ### Import a reference
 
-1. The popup checks file size and accepted MIME type.
-2. It decodes the image and checks dimensions and pixel count.
+1. The in-page control panel checks file size and accepted MIME type.
+2. Its shared importer decodes the image and checks dimensions and pixel count.
 3. It accepts source files up to 10 MiB, creates a data URL, and checks the encoded 14 MiB limit.
-4. It sends `replace-reference` only after site access is granted.
-5. The repository commits the replacement in the documented order.
-6. The background sends one hydration message to the active tab.
-7. The popup rerenders from the returned snapshot.
+4. The sender-bound panel request replaces the reference only after site access is granted.
+5. The repository commits the replacement in the documented order and the background sends one hydration message.
 
 A failed import leaves the current stored and displayed reference unchanged.
 
 ### Update controls
 
-1. The popup sends one validated `SettingsPatch`.
+1. The in-page control panel sends one validated sender-bound `SettingsPatch`.
 2. The repository commits the control or placement change and increments revision.
 3. The background sends `apply-settings` without image bytes.
 4. The content controller applies the snapshot idempotently.
 
-Opacity updates may be sent while the range control moves, but the popup allows only one request in flight and coalesces queued values to the latest value. Do not use a timer that can apply stale values after the final change.
+Opacity updates may be sent while the range control moves, but the panel allows only one request in flight and coalesces queued values to the latest value. Do not use a timer that can apply stale values after the final change.
 
 ### Navigate or reload
 
@@ -355,33 +344,18 @@ Drag rules:
 
 `hydrate`, `apply`, `clear`, and `destroy` are idempotent. The controller never creates a second host.
 
-## Popup states and controls
+## Popup responsibilities
 
-The popup has six explicit states:
+The popup has loading, unsupported-page, access-required, enabled, and error presentations. It performs only these operations:
 
-1. Loading.
-2. Unsupported page.
-3. Site access required.
-4. Site enabled without a reference.
-5. Site enabled with a reference.
-6. Error with a retry or clear action.
+- Load active-tab state.
+- Request exact-origin permission directly from a user gesture.
+- Register or repair the runtime content script after a grant.
+- Retry a failed state load or registration.
+- Clear corrupt site data.
+- Show or hide the in-page control panel.
 
-The enabled state contains:
-
-- File picker and replace action.
-- Reference name and intrinsic dimensions.
-- Visibility checkbox.
-- Transparency range and percentage output.
-- Fit-width checkbox, proportional scale range, numeric scale percentage, and 100% reset action.
-- Invert-colors checkbox.
-- Click-through and drag radio buttons.
-- X and Y integer inputs.
-- Clear site data button.
-- Status region with `aria-live="polite"`.
-
-The popup width must not exceed 360 CSS pixels. Every input has a visible label. All actions work with a keyboard. Focus returns to the triggering control after a request unless rendering removes that control. Errors remain until the next user action.
-
-X, Y, and scale numeric inputs commit on Enter or blur. Placement arrow keys change by one pixel, and Shift plus an arrow key changes by ten pixels. Scale arrow keys change by 1%, and Shift plus an arrow key changes by 10%. Choosing fit width preserves the last manual scale so turning fit width off restores it. Disabled controls remain readable but cannot dispatch requests when no reference exists.
+The in-page panel owns image import, reference replacement, overlay settings, placement, and ordinary site clearing. The popup width remains at most 360 CSS pixels, every popup action has a visible label, and status uses a polite live region.
 
 ## Task 0 proven details
 
@@ -490,7 +464,7 @@ Test every request and event, tab closure during a request, active-tab change, s
 - **Difficulty:** Medium
 - **Size:** M
 - **Depends on:** Tasks 1 and 4
-- **Files:** `src/popup/import-reference.ts`, fixtures for supported and rejected files, related tests
+- **Files:** `src/shared/image-import.ts`, fixtures for supported and rejected files, related tests
 
 Parse PNG, JPEG, WebP, and SVG files. Check file type, decode success, intrinsic dimensions, pixel count, data URL type, and encoded size. Generate a cryptographically random reference ID. Never insert SVG markup into popup or page HTML.
 
@@ -515,20 +489,18 @@ Test duplicate startup, old and equal revisions, scroll math, viewport resize, 1
 
 **Acceptance:** The overlay aligns to document coordinates while scrolling and remains isolated on the CSP fixture and a page with aggressive global CSS.
 
-### Task 7: Build the popup state machine and controls
+### Task 7: Build the popup access bootstrap
 
 - **Difficulty:** Medium
 - **Size:** L
 - **Depends on:** Tasks 4 and 5
 - **Files:** `entrypoints/popup.html`, `entrypoints/popup/main.ts`, `entrypoints/popup/style.css`, `src/popup/popup-controller.ts`, related tests
 
-Implement the six popup states and all documented controls. Keep rendering as a function of popup state. Keep Chrome tab queries, the direct permission request, and runtime messages behind an adapter.
+Keep the popup as an access and recovery surface. Its state machine loads the active tab, requests exact-origin permission directly from the enable action, registers the runtime script, retries failures, clears corrupt data, and toggles the in-page panel. Keep Chrome tab queries, the direct permission request, and runtime messages behind an adapter.
 
-Implement request correlation, one settings request in flight, latest-value coalescing for transparency and scale controls, fit-width and manual-scale preservation, stable error rendering, keyboard number steps, focus restoration, disabled controls, clear-site confirmation, and the permission request from a direct user action.
+The in-page panel owns imports, settings, placement, and ordinary clearing through sender-bound content requests. The popup does not parse files or dispatch reference or settings mutations.
 
-Test every state transition, access denial and retry, import failure, import success, stale response rejection, control coalescing, transparency endpoints, sizing bounds and reset, fit-width restoration, inversion, number parsing, clear confirmation, focus behavior, and error persistence.
-
-**Acceptance:** A keyboard-only user can grant access, import a reference, edit every control, and clear site data without reloading the page.
+**Acceptance:** The generated popup opens and a keyboard-only user can enable a site, retry an error, clear corrupt data, and show or hide the in-page panel without reloading.
 
 ### Task 8: Add commands, SPA navigation, and recovery
 
@@ -543,7 +515,7 @@ Handle top-frame `webNavigation.onHistoryStateUpdated`. Read state from the even
 
 On full reload, content startup restores state. On service-worker restart, repository state and persisted script registrations remain authoritative. Startup reconciliation repairs registrations and orphan records.
 
-Test command directions, page override creation, SPA route changes, query-string changes, hash-only changes, service-worker restart, content restart, and navigation races.
+Test command directions, origin-scoped placement updates, SPA route changes, query-string changes, hash-only changes, service-worker restart, content restart, and navigation races.
 
 **Acceptance:** Reload, back and forward navigation, `history.pushState`, and a service-worker restart preserve the correct origin image and site-scoped placement.
 

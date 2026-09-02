@@ -14,21 +14,19 @@ import {
   type ImportError,
   type ImportedReference,
   type MimeType,
+  type ContentPanelRequest,
   type OverlaySnapshot,
-  type PopupRequest,
   type Result,
 } from "../../src/shared/contracts";
 import { deriveOrigin, derivePageKey } from "../../src/shared/keys";
-import {
-  parseImportedReference,
-  parsePopupRequest,
-} from "../../src/shared/parse";
+import { parseImportedReference } from "../../src/shared/parse";
+import { parseContentPanelRequest } from "../../src/shared/panel-position";
 import {
   createImportReference,
   type ImportDependencies,
   type ImportFileLike,
   type ImportedDimensions,
-} from "../../src/popup/import-reference";
+} from "../../src/shared/image-import";
 
 const pageUrl = "https://example.test/import";
 const IMPORTED_ID = "123e4567-e89b-42d3-a456-426614174000";
@@ -587,11 +585,7 @@ describe("import-reference", () => {
       return { coordinator, repository, send };
     }
 
-    /**
-     * Mirrors the future popup flow: build and send the replace-reference
-     * request only after a successful import. Returns the import result so
-     * callers can discriminate success from failure.
-     */
+    /** Sends a panel-owned replacement only after a successful pure import. */
     async function importOrDispatch(
       importer: ReturnType<typeof createImportReference>,
       file: ImportFileLike,
@@ -599,14 +593,20 @@ describe("import-reference", () => {
     ): Promise<Result<ImportedReference, ImportError>> {
       const result = await importer(file);
       if (!result.ok) return result;
-      const request: Extract<PopupRequest, { kind: "replace-reference" }> = {
+      const request: Extract<
+        ContentPanelRequest,
+        { kind: "replace-reference" }
+      > = {
         kind: "replace-reference",
         requestId: "import-1",
-        url: pageUrl,
         reference: result.value,
       };
-      expect(parsePopupRequest(request as unknown).ok).toBe(true);
-      await harness.coordinator.handlePopup(request);
+      expect(parseContentPanelRequest(request).ok).toBe(true);
+      await harness.coordinator.handlePanelRequest(request, {
+        tabId: 9,
+        frameId: 0,
+        url: pageUrl,
+      });
       return result;
     }
 

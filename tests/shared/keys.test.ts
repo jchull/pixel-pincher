@@ -7,18 +7,18 @@ import {
   isImageRecordKey,
   ORIGIN_INDEX_KEY,
   originRecordKey,
-  pageRecordKey,
-  pageRecordKeyOrigin,
 } from "../../src/shared/keys";
-import { parseOrigin, parsePageKey, parseReferenceId } from "../../src/shared/parse";
+import { parseOrigin, parseReferenceId } from "../../src/shared/parse";
 
-function parsed<T>(result: { readonly ok: true; readonly value: T } | { readonly ok: false }): T {
+function parsed<T>(
+  result: { readonly ok: true; readonly value: T } | { readonly ok: false },
+): T {
   if (!result.ok) throw new Error("Expected valid fixture.");
   return result.value;
 }
 
 describe("storage keys", () => {
-  it("derives canonical HTTP(S) origins and hashless page keys from URLs", () => {
+  it("derives canonical HTTP(S) origins and hashless delivery page keys from URLs", () => {
     const url = new URL("https://example.com/path?tab=one#section");
     expect(deriveOrigin(url)).toBe("https://example.com");
     expect(derivePageKey(url)).toBe("https://example.com/path?tab=one");
@@ -26,23 +26,19 @@ describe("storage keys", () => {
     expect(derivePageKey(new URL("ftp://example.com/path"))).toBeUndefined();
   });
 
-  it("recovers origins only from canonical page-record keys", () => {
-    const pageKey = parsed(parsePageKey("https://example.com:8443/path?q=a&x=b"));
-
-    expect(pageRecordKeyOrigin(pageRecordKey(pageKey))).toBe("https://example.com:8443");
-    expect(pageRecordKeyOrigin("pixel-pincher:page:not-a-url")).toBeUndefined();
-    expect(pageRecordKeyOrigin("pixel-pincher:page:https%3A%2F%2Fexample.com%2Fpath%23fragment")).toBeUndefined();
-  });
-
-  it("uses stable prefixes and encodes every variable segment", () => {
+  it("uses stable keys only for origin metadata and image payloads", () => {
     const origin = parsed(parseOrigin("https://example.com:8443"));
-    const pageKey = parsed(parsePageKey("https://example.com:8443/path?q=a&x=b"));
-    const referenceId = parsed(parseReferenceId("123e4567-e89b-42d3-a456-426614174000"));
+    const referenceId = parsed(
+      parseReferenceId("123e4567-e89b-42d3-a456-426614174000"),
+    );
 
     expect(ORIGIN_INDEX_KEY).toBe("pixel-pincher:origins");
-    expect(originRecordKey(origin)).toBe("pixel-pincher:origin:https%3A%2F%2Fexample.com%3A8443");
-    expect(pageRecordKey(pageKey)).toBe("pixel-pincher:page:https%3A%2F%2Fexample.com%3A8443%2Fpath%3Fq%3Da%26x%3Db");
-    expect(imageRecordKey(referenceId)).toBe("pixel-pincher:image:123e4567-e89b-42d3-a456-426614174000");
+    expect(originRecordKey(origin)).toBe(
+      "pixel-pincher:origin:https%3A%2F%2Fexample.com%3A8443",
+    );
+    expect(imageRecordKey(referenceId)).toBe(
+      "pixel-pincher:image:123e4567-e89b-42d3-a456-426614174000",
+    );
     expect(isImageRecordKey(imageRecordKey(referenceId))).toBe(true);
     expect(isImageRecordKey("pixel-pincher:origin:not-an-image")).toBe(false);
   });

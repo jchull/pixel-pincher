@@ -18,7 +18,6 @@ import {
   parseOriginRecordV1,
   parseOverlaySettings,
   parsePageKey,
-  parsePageRecordV1,
   parsePopupRequest,
   parsePopupResponse,
   parsePublicError,
@@ -295,15 +294,6 @@ describe("boundary parsers", () => {
       errorCode(parseOriginRecordV1({ ...originRecord, schemaVersion: 2 })),
     ).toBe("invalid-stored-data");
     expect(
-      parsePageRecordV1({
-        schemaVersion: 1,
-        revision: 1,
-        origin: "https://example.com",
-        pageKey: "https://elsewhere.example/page",
-        placement: { x: 0, y: 0 },
-      }).ok,
-    ).toBe(false);
-    expect(
       parseOriginIndexV1({
         schemaVersion: 1,
         origins: ["https://example.com", "https://example.com"],
@@ -470,22 +460,6 @@ describe("boundary parsers", () => {
     ).toBe(true);
     expect(
       parsePopupRequest({
-        kind: "replace-reference",
-        requestId: "a",
-        url: "https://example.com/page",
-        reference: importedReference,
-      }).ok,
-    ).toBe(true);
-    expect(
-      parsePopupRequest({
-        kind: "update-settings",
-        requestId: "a",
-        url: "https://example.com/page",
-        patch: { kind: "visibility", visible: false },
-      }).ok,
-    ).toBe(true);
-    expect(
-      parsePopupRequest({
         kind: "clear-site",
         requestId: "a",
         url: "https://example.com/page",
@@ -555,18 +529,6 @@ describe("boundary parsers", () => {
         kind: "register-site",
         requestId: "a",
         url: "https://example.com/page",
-      },
-      {
-        kind: "replace-reference",
-        requestId: "a",
-        url: "https://example.com/page",
-        reference: importedReference,
-      },
-      {
-        kind: "update-settings",
-        requestId: "a",
-        url: "https://example.com/page",
-        patch: { kind: "visibility", visible: true },
       },
       { kind: "clear-site", requestId: "a", url: "https://example.com/page" },
     ];

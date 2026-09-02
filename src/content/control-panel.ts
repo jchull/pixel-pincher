@@ -5,7 +5,7 @@ import { readBoundedResponse } from "./read-bounded-response";
 import {
   createImportReference,
   type ImportDependencies,
-} from "../popup/import-reference";
+} from "../shared/image-import";
 import {
   MAX_IMAGE_RAW_BYTES,
   MAX_PLACEMENT,

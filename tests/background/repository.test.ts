@@ -200,6 +200,28 @@ describe("OverlayRepository V2 index", () => {
     expect(storage.readAllCalls).toBe(1);
   });
 
+  it("removes obsolete page namespace keys during maintenance cleanup", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    await repository.replaceReference({ url, reference: reference() });
+    storage.values["pixel-pincher:page:unparseable"] = { stale: true };
+    storage.values["pixel-pincher:page:https%3A%2F%2Fother.test%2Flegacy"] = {
+      stale: true,
+    };
+    storage.resetCalls();
+
+    await expect(repository.cleanupOrphans()).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(storage.values["pixel-pincher:page:unparseable"]).toBeUndefined();
+    expect(
+      storage.values["pixel-pincher:page:https%3A%2F%2Fother.test%2Flegacy"],
+    ).toBeUndefined();
+    expect(storage.readAllCalls).toBe(0);
+    expect(storage.keyListings).toHaveLength(1);
+  });
+
   it("preserves panel position in settings and reference mutation snapshots", async () => {
     const storage = new MemoryStorage();
     const repository = new OverlayRepository(storage);
@@ -386,7 +408,7 @@ describe("OverlayRepository V2 index", () => {
     });
   });
 
-  it("removes target legacy pages through a key-only valid-index purge", async () => {
+  it("removes every obsolete page namespace key through key-only cleanup", async () => {
     const storage = new MemoryStorage();
     const repository = new OverlayRepository(storage);
     const target = originFor(url);
@@ -400,7 +422,7 @@ describe("OverlayRepository V2 index", () => {
 
     await expect(repository.purgeOrigin(target)).resolves.toEqual({ ok: true, value: undefined });
     expect(storage.values[targetPageKey]).toBeUndefined();
-    expect(storage.values[otherPageKey]).toEqual({ legacy: true });
+    expect(storage.values[otherPageKey]).toBeUndefined();
     expect(storage.readAllCalls).toBe(0);
     expect(storage.keyListings).toHaveLength(1);
     expect(storage.reads.flat()).not.toContain(imageRecordKey(imported.metadata.id));

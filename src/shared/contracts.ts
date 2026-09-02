@@ -3,6 +3,7 @@ declare const pageKeyBrand: unique symbol;
 declare const referenceIdBrand: unique symbol;
 
 export type Origin = string & { readonly [originBrand]: "Origin" };
+/** Canonical page identity for delivery and snapshot correlation; never persisted separately. */
 export type PageKey = string & { readonly [pageKeyBrand]: "PageKey" };
 export type ReferenceId = string & {
   readonly [referenceIdBrand]: "ReferenceId";
@@ -82,14 +83,6 @@ export type OriginRecordV1 = Readonly<{
   panelPosition?: PanelPosition;
 }>;
 
-export type PageRecordV1 = Readonly<{
-  schemaVersion: 1;
-  revision: number;
-  origin: Origin;
-  pageKey: PageKey;
-  placement: Placement;
-}>;
-
 export type ImageRecordV1 = Readonly<{
   schemaVersion: 1;
   referenceId: ReferenceId;
@@ -164,21 +157,10 @@ export type ContentPanelRequest =
       panelPosition: PanelPosition;
     }>;
 
+/** Popup requests are limited to access bootstrap and corrupt-site recovery. */
 export type PopupRequest =
   | Readonly<{ kind: "get-tab-state"; requestId: string }>
   | Readonly<{ kind: "register-site"; requestId: string; url: string }>
-  | Readonly<{
-      kind: "replace-reference";
-      requestId: string;
-      url: string;
-      reference: ImportedReference;
-    }>
-  | Readonly<{
-      kind: "update-settings";
-      requestId: string;
-      url: string;
-      patch: SettingsPatch;
-    }>
   | Readonly<{ kind: "clear-site"; requestId: string; url: string }>;
 
 export type RenderDiagnostic = Readonly<{

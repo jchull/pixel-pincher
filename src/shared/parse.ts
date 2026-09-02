@@ -16,7 +16,6 @@ import {
   type OverlaySnapshot,
   type PanelPosition,
   type PageKey,
-  type PageRecordV1,
   type Placement,
   type PopupRequest,
   type PopupResponse,
@@ -763,38 +762,6 @@ export function parsePopupRequest(
             },
           }
         : failure("invalid-request");
-    case "replace-reference": {
-      const reference = parseImportedReference(value.reference);
-      return hasExactKeys(value, ["kind", "requestId", "url", "reference"]) &&
-        url?.ok &&
-        reference.ok
-        ? {
-            ok: true,
-            value: {
-              kind: "replace-reference",
-              requestId: value.requestId,
-              url: url.value.toString(),
-              reference: reference.value,
-            },
-          }
-        : failure("invalid-request");
-    }
-    case "update-settings": {
-      const patch = parseSettingsPatch(value.patch);
-      return hasExactKeys(value, ["kind", "requestId", "url", "patch"]) &&
-        url?.ok &&
-        patch.ok
-        ? {
-            ok: true,
-            value: {
-              kind: "update-settings",
-              requestId: value.requestId,
-              url: url.value.toString(),
-              patch: patch.value,
-            },
-          }
-        : failure("invalid-request");
-    }
     default:
       return failure("invalid-request");
   }
@@ -953,46 +920,6 @@ export function parseOriginRecordV1(
       ...(placement === undefined ? {} : { placement: placement.value }),
       reference: reference.value,
       ...(panelPosition === undefined ? {} : { panelPosition: panelPosition.value }),
-    },
-  };
-}
-
-export function parsePageRecordV1(
-  value: unknown,
-): Result<PageRecordV1, PublicError> {
-  if (
-    !isOwnDataRecord(value) ||
-    !hasExactKeys(value, [
-      "schemaVersion",
-      "revision",
-      "origin",
-      "pageKey",
-      "placement",
-    ]) ||
-    value.schemaVersion !== 1
-  )
-    return failure("invalid-stored-data");
-  const revision = readSafeInteger(value.revision);
-  const origin = parseOrigin(value.origin);
-  const pageKey = parsePageKey(value.pageKey);
-  const placement = parsePlacementValue(value.placement, "invalid-stored-data");
-  if (
-    revision === undefined ||
-    revision < 0 ||
-    !origin.ok ||
-    !pageKey.ok ||
-    !placement.ok ||
-    !pageKey.value.startsWith(`${origin.value}/`)
-  )
-    return failure("invalid-stored-data");
-  return {
-    ok: true,
-    value: {
-      schemaVersion: 1,
-      revision,
-      origin: origin.value,
-      pageKey: pageKey.value,
-      placement: placement.value,
     },
   };
 }

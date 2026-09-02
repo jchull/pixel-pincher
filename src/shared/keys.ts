@@ -1,7 +1,8 @@
 import type { Origin, PageKey, ReferenceId } from "./contracts";
 
 const PREFIX = "pixel-pincher";
-const PAGE_RECORD_PREFIX = `${PREFIX}:page:`;
+/** Namespace left by unpublished builds; repository maintenance deletes these opaque keys. */
+export const OBSOLETE_PAGE_STORAGE_PREFIX = `${PREFIX}:page:`;
 export const IMAGE_RECORD_KEY_PREFIX = `${PREFIX}:image:`;
 
 export const ORIGIN_INDEX_KEY = `${PREFIX}:origins`;
@@ -32,36 +33,12 @@ export function derivePageKey(url: URL): PageKey | undefined {
   return asPageKey(pageUrl.toString());
 }
 
-function key(kind: "origin" | "page" | "image", segment: string): string {
+function key(kind: "origin" | "image", segment: string): string {
   return `${PREFIX}:${kind}:${encodeURIComponent(segment)}`;
 }
 
 export function originRecordKey(origin: Origin): string {
   return key("origin", origin);
-}
-
-export function pageRecordKey(pageKey: PageKey): string {
-  return key("page", pageKey);
-}
-
-/** Return an origin only for a canonical page-record key. */
-export function pageRecordKeyOrigin(value: string): Origin | undefined {
-  if (!value.startsWith(PAGE_RECORD_PREFIX)) return undefined;
-
-  let pageUrl: URL;
-  try {
-    pageUrl = new URL(decodeURIComponent(value.slice(PAGE_RECORD_PREFIX.length)));
-  } catch {
-    return undefined;
-  }
-
-  const pageKey = derivePageKey(pageUrl);
-  const origin = deriveOrigin(pageUrl);
-  if (pageKey === undefined || origin === undefined || pageRecordKey(pageKey) !== value) {
-    return undefined;
-  }
-
-  return origin;
 }
 
 /** Identifies the image-record namespace without reading a stored payload. */

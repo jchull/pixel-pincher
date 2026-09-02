@@ -1,18 +1,13 @@
 :root {
   --color-text: #e7eefb;
-  --color-text-muted: #cbd5e1;
   --color-border: rgb(148 163 184 / 34%);
   --color-focus: #60a5fa;
   --color-primary: rgb(51 65 85 / 90%);
   --color-primary-hover: rgb(71 85 105 / 95%);
   --color-primary-active: rgb(30 41 59 / 95%);
   --color-danger: #fca5a5;
-  --color-danger-hover: #fecaca;
   --color-danger-background: rgb(127 29 29 / 34%);
-  --color-disabled-text: #94a3b8;
-  --color-disabled-background: rgb(51 65 85 / 55%);
   --radius: 6px;
-  --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
@@ -33,7 +28,7 @@ body {
 }
 
 main {
-  min-height: 100vh;
+  min-height: 160px;
   padding: var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: 12px;
@@ -47,73 +42,9 @@ h1 {
   letter-spacing: -0.01em;
 }
 
-h2 {
+p,
+#popup-status {
   margin: 0 0 var(--space-2);
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-p {
-  margin: 0 0 var(--space-2);
-}
-
-section,
-fieldset {
-  margin: 0 0 var(--space-4);
-}
-
-fieldset {
-  min-width: 0;
-  margin-left: 0;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  padding: var(--space-2) var(--space-3) var(--space-3);
-}
-
-legend {
-  padding: 0 var(--space-1);
-  font-weight: 600;
-}
-
-fieldset fieldset {
-  margin-bottom: var(--space-2);
-  padding: var(--space-1) var(--space-2) var(--space-2);
-}
-
-label {
-  display: block;
-  margin-top: var(--space-2);
-  font-weight: 500;
-}
-
-label > input {
-  display: inline-block;
-  margin-right: 6px;
-  vertical-align: middle;
-}
-
-label:has(> output) {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--space-2);
-}
-
-output {
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-}
-
-input[type="checkbox"],
-input[type="radio"] {
-  accent-color: var(--color-primary);
-}
-
-input[type="range"],
-input[type="number"],
-input[type="file"] {
-  width: 100%;
-  margin-top: var(--space-1);
 }
 
 button {
@@ -128,83 +59,34 @@ button {
   font: inherit;
   font-weight: 600;
   cursor: pointer;
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease;
 }
 
-button:enabled:hover {
+button:hover {
   background: var(--color-primary-hover);
 }
-button:enabled:active {
+
+button:active {
   background: var(--color-primary-active);
 }
 
-button:disabled {
-  background: var(--color-disabled-background);
-  color: var(--color-disabled-text);
-  cursor: default;
-}
-
-#cancel-clear {
-  background: rgb(51 65 85 / 65%);
-  color: var(--color-text);
-  border-color: var(--color-border);
-}
-
-#cancel-clear:enabled:hover {
-  background: rgb(71 85 105 / 78%);
-}
-#cancel-clear:enabled:active {
-  background: rgb(30 41 59 / 95%);
-}
-
-#confirm-clear {
-  background: var(--color-danger);
-}
-#confirm-clear:enabled:hover {
-  background: var(--color-danger-hover);
-}
-
-button:focus-visible,
-input:focus-visible {
+button:focus-visible {
   outline: 3px solid var(--color-focus);
   outline-offset: 2px;
 }
 
-.error,
-.diagnostic {
+.error {
+  display: block;
+  padding: var(--space-2);
   color: var(--color-danger);
   font-weight: 600;
-}
-
-#popup-root {
-  width: 320px;
-  min-height: 160px;
-}
-
-#popup-status {
-  margin-bottom: var(--space-2);
-}
-#popup-status:empty {
-  display: none;
-}
-
-#popup-status .error {
-  display: block;
-  margin-bottom: var(--space-2);
-  padding: var(--space-2);
   border: 1px solid var(--color-danger);
   border-radius: var(--radius);
   background: var(--color-danger-background);
 }
 
-.diagnostic {
-  margin: var(--space-2) 0 0;
-  padding: var(--space-2);
-  border-left: 3px solid var(--color-danger);
-  border-radius: 0 var(--radius) var(--radius) 0;
-  background: var(--color-danger-background);
+#popup-status:empty {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

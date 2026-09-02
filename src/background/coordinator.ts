@@ -200,7 +200,7 @@ export class BackgroundCoordinator {
 
   async handlePopup(
     request: PopupRequest,
-  ): Promise<PopupResponse<TabState | OverlaySnapshot | undefined>> {
+  ): Promise<PopupResponse<TabState | undefined>> {
     const active = await this.#tabs.getActiveTab();
     if (active === null)
       return failure(request.requestId, new AppError("unsupported-url"));
@@ -416,7 +416,7 @@ export class BackgroundCoordinator {
   async #handlePopupForActive(
     request: PopupRequest,
     active: ActiveTab,
-  ): Promise<PopupResponse<TabState | OverlaySnapshot | undefined>> {
+  ): Promise<PopupResponse<TabState | undefined>> {
     const url = parseSupportedUrl(active.url);
     if (!url.ok)
       return failure(request.requestId, new AppError("unsupported-url"));
@@ -487,7 +487,7 @@ export class BackgroundCoordinator {
       );
       if (!delivered.ok)
         return failure(request.requestId, deliveryFailure(delivered));
-      return success(request.requestId, hydration.value.snapshot);
+      return success(request.requestId, undefined);
     }
 
     if (request.kind === "clear-site") {
@@ -530,66 +530,7 @@ export class BackgroundCoordinator {
         return failure(request.requestId, new AppError("invalid-request"));
       return success(request.requestId, undefined);
     }
-
-    if (request.kind === "replace-reference") {
-      if (!(await this.#sameActiveTab(active)))
-        return failure(request.requestId, new AppError("invalid-request"));
-      const enabled = await this.#siteAccess.has(origin);
-      if (!enabled.ok) return failure(request.requestId, enabled.error);
-      if (!enabled.value)
-        return failure(request.requestId, new AppError("site-access-revoked"));
-      if (!(await this.#sameActiveTab(active)))
-        return failure(request.requestId, new AppError("invalid-request"));
-      const replaced = await this.#repository.replaceReference({
-        url: requested.value,
-        reference: request.reference,
-      });
-      if (!replaced.ok) return failure(request.requestId, replaced.error);
-      this.#discardStaleDiagnostic(active.id, replaced.value);
-      if (!(await this.#sameActiveTab(active)))
-        return failure(request.requestId, new AppError("invalid-request"));
-      const hydration = await this.#repository.readHydration(requested.value);
-      if (!hydration.ok) return failure(request.requestId, hydration.error);
-      if (!(await this.#sameActiveTab(active)))
-        return failure(request.requestId, new AppError("invalid-request"));
-      const delivered = await this.#deliverHydration(
-        active.id,
-        requested.value,
-        hydration.value,
-      );
-      if (!delivered.ok)
-        return failure(request.requestId, deliveryFailure(delivered));
-      if (!(await this.#sameActiveTab(active)))
-        return failure(request.requestId, new AppError("invalid-request"));
-      return success(request.requestId, replaced.value);
-    }
-
-    if (!(await this.#sameActiveTab(active)))
-      return failure(request.requestId, new AppError("invalid-request"));
-    const enabled = await this.#siteAccess.has(origin);
-    if (!enabled.ok) return failure(request.requestId, enabled.error);
-    if (!enabled.value)
-      return failure(request.requestId, new AppError("site-access-revoked"));
-    if (!(await this.#sameActiveTab(active)))
-      return failure(request.requestId, new AppError("invalid-request"));
-    const updated = await this.#repository.updateSettings({
-      url: requested.value,
-      patch: request.patch,
-    });
-    if (!updated.ok) return failure(request.requestId, updated.error);
-    this.#discardStaleDiagnostic(active.id, updated.value);
-    if (!(await this.#sameActiveTab(active)))
-      return failure(request.requestId, new AppError("invalid-request"));
-    const delivered = await this.#deliverSettings(
-      active.id,
-      requested.value,
-      updated.value,
-    );
-    if (!delivered.ok)
-      return failure(request.requestId, deliveryFailure(delivered));
-    if (!(await this.#sameActiveTab(active)))
-      return failure(request.requestId, new AppError("invalid-request"));
-    return success(request.requestId, updated.value);
+    throw new Error("Unsupported popup request.");
   }
 
   async #handleCommandForActive(

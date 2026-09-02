@@ -9,7 +9,7 @@ import {
   MAX_IMAGE_ENCODED_BYTES,
   MAX_IMAGE_PIXELS,
   MAX_IMAGE_RAW_BYTES,
-} from "../shared/contracts";
+} from "./contracts";
 
 /** The minimal File-shaped fields the import path needs from a picked file. */
 export type ImportFileLike = Readonly<{

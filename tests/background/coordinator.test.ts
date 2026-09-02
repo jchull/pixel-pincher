@@ -224,9 +224,8 @@ function createCoordinator(
 }
 
 describe("BackgroundCoordinator", () => {
-  it("routes all popup mutations to the active canonical page and delivers their resulting state", async () => {
+  it("limits popup operations to state loading, registration, and corrupt-data clearing", async () => {
     const harness = createCoordinator();
-    const imported = reference();
 
     await expect(
       harness.coordinator.handlePopup({
@@ -240,23 +239,7 @@ describe("BackgroundCoordinator", () => {
         requestId: "register",
         url: pageUrlWithOtherHash,
       }),
-    ).resolves.toEqual({ requestId: "register", ok: true, value: snapshot() });
-    await expect(
-      harness.coordinator.handlePopup({
-        kind: "replace-reference",
-        requestId: "replace",
-        url: pageUrlWithOtherHash,
-        reference: imported,
-      }),
-    ).resolves.toMatchObject({ ok: true });
-    await expect(
-      harness.coordinator.handlePopup({
-        kind: "update-settings",
-        requestId: "update",
-        url: pageUrlWithOtherHash,
-        patch: { kind: "opacity", opacity: 0.7 },
-      }),
-    ).resolves.toMatchObject({ ok: true });
+    ).resolves.toEqual({ requestId: "register", ok: true, value: undefined });
     await expect(
       harness.coordinator.handlePopup({
         kind: "clear-site",
@@ -265,8 +248,6 @@ describe("BackgroundCoordinator", () => {
       }),
     ).resolves.toEqual({ requestId: "clear", ok: true, value: undefined });
 
-    expect(harness.repository.replaceReference).toHaveBeenCalledOnce();
-    expect(harness.repository.updateSettings).toHaveBeenCalledOnce();
     expect(harness.repository.purgeOrigin).toHaveBeenCalledOnce();
     expect(harness.siteAccess.ensureForUrl).toHaveBeenCalledOnce();
     expect(harness.siteAccess.injectForUrl).toHaveBeenCalledTimes(2);
@@ -281,64 +262,10 @@ describe("BackgroundCoordinator", () => {
     expect(harness.siteAccess.unregisterOrigin).toHaveBeenCalledOnce();
     expect(harness.send.mock.calls.map(([, request]) => request.kind)).toEqual([
       "hydrate-overlay",
-      "hydrate-overlay",
-      "apply-settings",
       "clear-overlay",
     ]);
   });
 
-  it("rejects a different canonical page and rechecks the active tab before mutation, delivery, and response", async () => {
-    const harness = createCoordinator();
-    await expect(
-      harness.coordinator.handlePopup({
-        kind: "update-settings",
-        requestId: "wrong",
-        url: otherPageUrl,
-        patch: { kind: "opacity", opacity: 0.7 },
-      }),
-    ).resolves.toMatchObject({ ok: false, error: { code: "invalid-request" } });
-    expect(harness.repository.updateSettings).not.toHaveBeenCalled();
-
-    const originalGetActiveTab = harness.tabs.getActiveTab.bind(harness.tabs);
-    let activeReads = 0;
-    harness.tabs.getActiveTab = async () => {
-      activeReads += 1;
-      return activeReads === 1
-        ? originalGetActiveTab()
-        : { id: 10, url: otherPageUrl };
-    };
-    await expect(
-      harness.coordinator.handlePopup({
-        kind: "update-settings",
-        requestId: "moved",
-        url: pageUrl,
-        patch: { kind: "opacity", opacity: 0.7 },
-      }),
-    ).resolves.toMatchObject({ ok: false, error: { code: "invalid-request" } });
-    expect(harness.repository.updateSettings).not.toHaveBeenCalled();
-    expect(harness.send).not.toHaveBeenCalled();
-
-    const afterMutation = createCoordinator();
-    const activeTab = afterMutation.tabs.active;
-    if (activeTab === null) throw new Error("Test needs an active tab.");
-    let responseBoundaryReads = 0;
-    afterMutation.tabs.getActiveTab = async () => {
-      responseBoundaryReads += 1;
-      return responseBoundaryReads <= 3
-        ? activeTab
-        : { id: 10, url: otherPageUrl };
-    };
-    await expect(
-      afterMutation.coordinator.handlePopup({
-        kind: "update-settings",
-        requestId: "after-mutation",
-        url: pageUrl,
-        patch: { kind: "opacity", opacity: 0.7 },
-      }),
-    ).resolves.toMatchObject({ ok: false, error: { code: "invalid-request" } });
-    expect(afterMutation.repository.updateSettings).toHaveBeenCalledOnce();
-    expect(afterMutation.send).not.toHaveBeenCalled();
-  });
 
   it("injects after a successful register and skips injection when the target changes", async () => {
     const harness = createCoordinator();
@@ -358,7 +285,7 @@ describe("BackgroundCoordinator", () => {
         requestId: "register",
         url: pageUrl,
       }),
-    ).resolves.toEqual({ requestId: "register", ok: true, value: snapshot() });
+    ).resolves.toEqual({ requestId: "register", ok: true, value: undefined });
     expect(harness.siteAccess.injectForUrl).toHaveBeenCalledOnce();
     const [injectedUrl, injectedTabId] =
       harness.siteAccess.injectForUrl.mock.calls[0] ?? [];
@@ -631,70 +558,7 @@ describe("BackgroundCoordinator", () => {
     expect(harness.repository.readHydration).toHaveBeenCalledTimes(2);
   });
 
-  it("gates popup reference and settings mutations on current site access", async () => {
-    const harness = createCoordinator({ enabled: false });
-    await expect(
-      harness.coordinator.handlePopup({
-        kind: "replace-reference",
-        requestId: "replace",
-        url: pageUrl,
-        reference: reference(),
-      }),
-    ).resolves.toMatchObject({
-      ok: false,
-      error: { code: "site-access-revoked" },
-    });
-    await expect(
-      harness.coordinator.handlePopup({
-        kind: "update-settings",
-        requestId: "settings",
-        url: pageUrl,
-        patch: { kind: "opacity", opacity: 0.7 },
-      }),
-    ).resolves.toMatchObject({
-      ok: false,
-      error: { code: "site-access-revoked" },
-    });
-    expect(harness.repository.replaceReference).not.toHaveBeenCalled();
-    expect(harness.repository.updateSettings).not.toHaveBeenCalled();
-  });
 
-  it("delivers lower revisions after the same tab navigates to a different canonical page", async () => {
-    const harness = createCoordinator({
-      currentSnapshot: snapshot({ revision: 7 }),
-    });
-    await expect(
-      harness.coordinator.handlePopup({
-        kind: "update-settings",
-        requestId: "first",
-        url: pageUrl,
-        patch: { kind: "opacity", opacity: 0.7 },
-      }),
-    ).resolves.toMatchObject({ ok: true });
-    harness.tabs.active = { id: 9, url: otherPageUrl };
-    harness.tabs.tabs.set(9, { id: 9, url: otherPageUrl });
-    harness.setSnapshot(snapshot({ revision: 0, url: otherPageUrl }));
-
-    await expect(
-      harness.coordinator.handlePopup({
-        kind: "update-settings",
-        requestId: "second",
-        url: otherPageUrl,
-        patch: { kind: "opacity", opacity: 0.6 },
-      }),
-    ).resolves.toMatchObject({ ok: true });
-    expect(harness.send).toHaveBeenCalledTimes(2);
-    expect(harness.send).toHaveBeenLastCalledWith(
-      9,
-      expect.objectContaining({
-        kind: "apply-settings",
-        snapshot: expect.objectContaining({
-          revision: 1,
-          pageKey: derivePageKey(new URL(otherPageUrl)),
-        }),
-      }),
-    );
-  });
 
   it("best-effort clears removed-origin overlays before independent cleanup and reconciliation", async () => {
     const harness = createCoordinator({
@@ -791,12 +655,10 @@ describe("BackgroundCoordinator", () => {
     const harness = createCoordinator({
       currentSnapshot: snapshot({ revision: 5 }),
     });
-    await harness.coordinator.handlePopup({
-      kind: "replace-reference",
-      requestId: "reference",
-      url: pageUrl,
-      reference: imported,
-    });
+    await harness.coordinator.handlePanelRequest(
+      { kind: "replace-reference", requestId: "reference", reference: imported },
+      { tabId: 9, frameId: 0, url: pageUrl },
+    );
     await harness.coordinator.handleContent(
       { kind: "content-ready", url: pageUrl },
       { tabId: 9, frameId: 0, url: pageUrl },
@@ -854,12 +716,10 @@ describe("BackgroundCoordinator", () => {
   it("rehydrates after content reload and runs persistent-state recovery on service-worker startup", async () => {
     const imported = reference();
     const harness = createCoordinator();
-    await harness.coordinator.handlePopup({
-      kind: "replace-reference",
-      requestId: "reference",
-      url: pageUrl,
-      reference: imported,
-    });
+    await harness.coordinator.handlePanelRequest(
+      { kind: "replace-reference", requestId: "reference", reference: imported },
+      { tabId: 9, frameId: 0, url: pageUrl },
+    );
     harness.send.mockClear();
 
     await harness.coordinator.handleContent(

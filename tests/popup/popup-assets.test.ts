@@ -46,7 +46,6 @@ describe("extension assets", () => {
     expect(css).toContain(":focus-visible");
     expect(css).toContain("@media (prefers-reduced-motion: reduce)");
     expect(css).toContain(".error");
-    expect(css).toContain(".diagnostic");
     expect(css).not.toMatch(/outline:\s*(none|0)/);
   });
 

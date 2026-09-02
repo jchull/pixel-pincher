@@ -25,9 +25,9 @@ import {
   IMAGE_RECORD_KEY_PREFIX,
   imageRecordKey,
   isImageRecordKey,
+  OBSOLETE_PAGE_STORAGE_PREFIX,
   ORIGIN_INDEX_KEY,
   originRecordKey,
-  pageRecordKeyOrigin,
 } from "../shared/keys";
 import {
   parseImageRecordV1,
@@ -390,11 +390,23 @@ export class OverlayRepository {
           ),
         );
         const orphanIds = index.imageIds.filter((id) => !owned.has(id));
-        if (orphanIds.length === 0) return { ok: true, value: undefined };
-        await this.#adapter.remove(orphanIds.map(imageRecordKey));
-        await this.#adapter.set({
-          [ORIGIN_INDEX_KEY]: buildIndex(index.origins, index.imageIds.filter((id) => owned.has(id))),
-        });
+        const obsoleteKeys = (await this.#adapter.getKeys()).filter((key) =>
+          key.startsWith(OBSOLETE_PAGE_STORAGE_PREFIX),
+        );
+        if (orphanIds.length === 0 && obsoleteKeys.length === 0)
+          return { ok: true, value: undefined };
+        await this.#adapter.remove([
+          ...orphanIds.map(imageRecordKey),
+          ...obsoleteKeys,
+        ]);
+        if (orphanIds.length > 0) {
+          await this.#adapter.set({
+            [ORIGIN_INDEX_KEY]: buildIndex(
+              index.origins,
+              index.imageIds.filter((id) => owned.has(id)),
+            ),
+          });
+        }
         return { ok: true, value: undefined };
       } catch (error: unknown) {
         return error instanceof AppError ? invalidStoredData() : repositoryFailure();
@@ -470,11 +482,11 @@ export class OverlayRepository {
     const origins: OriginIndexV2["origins"][number][] = [];
     const owners = new Set<ReferenceId>();
     const imageIds = new Set<ReferenceId>();
-    const obsoletePageKeys: string[] = [];
+    const obsoleteKeys = Object.keys(values).filter((key) =>
+      key.startsWith(OBSOLETE_PAGE_STORAGE_PREFIX),
+    );
 
     for (const [key, value] of Object.entries(values)) {
-      const pageOrigin = pageRecordKeyOrigin(key);
-      if (pageOrigin !== undefined) obsoletePageKeys.push(key);
       if (!key.startsWith("pixel-pincher:origin:")) continue;
       const record = parseOriginRecordV1(value);
       if (!record.ok || key !== originRecordKey(record.value.origin)) continue;
@@ -494,7 +506,7 @@ export class OverlayRepository {
     }
     const index = buildIndex(origins, [...imageIds]);
     await this.#adapter.set({ [ORIGIN_INDEX_KEY]: index });
-    if (obsoletePageKeys.length > 0) await this.#adapter.remove(obsoletePageKeys);
+    if (obsoleteKeys.length > 0) await this.#adapter.remove(obsoleteKeys);
     return index;
   }
 
@@ -570,16 +582,15 @@ export class OverlayRepository {
       index.origins.filter((candidate) => candidate.origin !== origin),
       index.imageIds.filter((id) => id !== entry.referenceId),
     );
-    // V2 may coexist with obsolete page keys after an interrupted migration.
-    // Key enumeration exposes names only, so this remains a targeted deletion
-    // without materializing unrelated image payloads.
-    const pageKeys = (await this.#adapter.getKeys()).filter(
-      (candidate) => pageRecordKeyOrigin(candidate) === origin,
+    // Key enumeration exposes names only, so cleanup can remove every obsolete
+    // unpublished-record key without materializing unrelated image payloads.
+    const obsoleteKeys = (await this.#adapter.getKeys()).filter((key) =>
+      key.startsWith(OBSOLETE_PAGE_STORAGE_PREFIX),
     );
     await this.#adapter.remove([
       key,
       ...(entry.referenceId === null ? [] : [imageRecordKey(entry.referenceId)]),
-      ...pageKeys,
+      ...obsoleteKeys,
     ]);
     await this.#adapter.set({ [ORIGIN_INDEX_KEY]: nextIndex });
     return true;
@@ -595,7 +606,7 @@ export class OverlayRepository {
       const owners = new Map<ReferenceId, Origin[]>();
       const keysToRemove = [originRecordKey(target)];
       for (const [key, value] of Object.entries(values)) {
-        if (pageRecordKeyOrigin(key) === target) keysToRemove.push(key);
+        if (key.startsWith(OBSOLETE_PAGE_STORAGE_PREFIX)) keysToRemove.push(key);
         if (!key.startsWith("pixel-pincher:origin:")) continue;
         const record = parseOriginRecordV1(value);
         if (
