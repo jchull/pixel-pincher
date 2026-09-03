@@ -72,7 +72,7 @@ function buildIndex(
   return {
     schemaVersion: 2,
     origins: [...origins].sort((left, right) =>
-      left.origin.localeCompare(right.origin),
+      left.origin < right.origin ? -1 : left.origin > right.origin ? 1 : 0,
     ),
     imageIds: [...imageIds].sort(),
   };

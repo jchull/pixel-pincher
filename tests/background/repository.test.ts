@@ -170,6 +170,43 @@ describe("OverlayRepository V2 index", () => {
       expect(storage.reads.flat()).not.toContain(imageRecordKey(reference({ id }).metadata.id));
   });
 
+  it("writes IPv4 and IPv6 origins in parser code-unit order", async () => {
+    const storage = new MemoryStorage();
+    const repository = new OverlayRepository(storage);
+    const ipv4Url = new URL("https://127.0.0.1/page");
+    const ipv6Url = new URL("https://[::1]/page");
+    const ipv4Reference = reference({
+      id: "123e4567-e89b-42d3-a456-426614174015",
+    });
+    const ipv6Reference = reference({
+      id: "123e4567-e89b-42d3-a456-426614174016",
+    });
+
+    await expect(
+      repository.replaceReference({ url: ipv4Url, reference: ipv4Reference }),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      repository.replaceReference({ url: ipv6Url, reference: ipv6Reference }),
+    ).resolves.toMatchObject({ ok: true });
+
+    const ipv4 = originFor(ipv4Url);
+    const ipv6 = originFor(ipv6Url);
+    expect(storage.values[ORIGIN_INDEX_KEY]).toEqual({
+      schemaVersion: 2,
+      origins: [
+        { origin: ipv4, referenceId: ipv4Reference.metadata.id },
+        { origin: ipv6, referenceId: ipv6Reference.metadata.id },
+      ],
+      imageIds: [ipv4Reference.metadata.id, ipv6Reference.metadata.id],
+    });
+    await expect(repository.readSnapshot(ipv4Url)).resolves.toMatchObject({
+      ok: true,
+    });
+    await expect(repository.readSnapshot(ipv6Url)).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
   it("migrates V1 once, seeds image IDs from named image keys, and removes legacy pages", async () => {
     const storage = new MemoryStorage();
     const repository = new OverlayRepository(storage);
