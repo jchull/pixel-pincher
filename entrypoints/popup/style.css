@@ -1,9 +1,9 @@
 :root {
-  --color-text: #e7eefb;
+  --color-text: #dfdaeb;
   --color-border: rgb(148 163 184 / 34%);
   --color-focus: #60a5fa;
-  --color-primary: rgb(51 65 85 / 90%);
-  --color-primary-hover: rgb(71 85 105 / 95%);
+  --color-primary: rgb(49 36 78);
+  --color-primary-hover: rgb(221 251 210);
   --color-primary-active: rgb(30 41 59 / 95%);
   --color-danger: #fca5a5;
   --color-danger-background: rgb(127 29 29 / 34%);
@@ -21,7 +21,7 @@ body {
   width: min(300px, 100vw);
   margin: 0;
   color: var(--color-text);
-  background: linear-gradient(145deg, rgb(15 23 42 / 97%), rgb(30 41 59 / 97%));
+  background: linear-gradient(145deg, rgb(49 36 78), rgb(69 50 109));
   font-family: system-ui, sans-serif;
   font-size: 0.875rem;
   line-height: 1.45;
@@ -33,6 +33,9 @@ main {
   border: 1px solid var(--color-border);
   border-radius: 12px;
   box-shadow: 0 14px 34px rgb(2 6 23 / 42%);
+}
+#popup-root {
+  min-width: 200px;
 }
 
 h1 {
@@ -63,7 +66,7 @@ button {
 }
 
 button:hover {
-  background: var(--color-primary-hover);
+  color: var(--color-primary-hover);
 }
 
 button:active {

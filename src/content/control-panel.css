@@ -1,4 +1,5 @@
 :host {
+
   all: initial;
   position: fixed;
   z-index: 2147483647;
@@ -6,7 +7,7 @@
   width: 300px;
   margin: 0;
   padding: 0;
-  color: #e7eefb;
+  color: var(--color-text);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
@@ -27,17 +28,17 @@
   overflow: hidden;
   border: 1px solid rgb(148 163 184 / 34%);
   border-radius: 12px;
-  background: linear-gradient(145deg, rgb(50 14 59), rgb(76 42 133));
+  background: linear-gradient(145deg, rgb(49 36 78), rgb(69 50 109));
   box-shadow:
-    0 14px 34px rgb(2 6 23 / 42%),
-    0 2px 8px rgb(2 6 23 / 30%);
+    0 14px 34px rgb(29 21 46),
+    0 2px 8px rgb(29 21 46);
 }
 
 .header {
   display: flex;
   min-height: 40px;
   border-bottom: 1px solid rgb(148 163 184 / 20%);
-  background: rgb(50 14 59);
+  background: rgb(49 36 78);
 }
 
 .handle {
@@ -73,7 +74,7 @@
   border: 0;
   padding: 0;
   background: transparent;
-  color: #bcedf6;
+  color: var(--color-text);
   cursor: pointer;
   font: inherit;
   font-size: 18px;
@@ -89,24 +90,24 @@
 
 .close:hover,
 .collapse:hover {
-  background: rgb(51 65 85 / 65%);
-  color: #f8fafc;
+  background: rgb(255 155 255 / 20%);
+  color: var(--color-primary-hover);
 }
 
 .close:hover {
-  color: #ddfbd2;
+  color: var(--color-primary-hover);
 }
 
 .handle:focus-visible,
 .button:focus-visible,
 .file-drop-target:focus-visible,
 input:focus-visible {
-  outline: 2px solid #6b7fd7;
+  outline: 2px solid #826caf;
   outline-offset: -2px;
 }
 
 .grip {
-  color: #bcedf6;
+  color: var(--color-text);
   font-size: 16px;
   letter-spacing: 2px;
 }
@@ -119,7 +120,7 @@ input:focus-visible {
 
 .status {
   margin: 0;
-  color: #bcedf6;
+  color: var(--color-text);
 }
 
 .file-drop-target {
@@ -132,8 +133,8 @@ input:focus-visible {
   overflow: hidden;
   min-height: 72px;
   border: 1px dashed rgb(148 163 184 / 55%);
-  background: rgb(76 42 133);
-  color: #f8fafc;
+  background: rgb(208 200 225);
+  color: #31244e;
   line-height: 1.45;
   text-align: center;
   text-shadow:
@@ -154,9 +155,9 @@ input:focus-visible {
 
 .file-drop-target:hover,
 .file-drop-target.dragging {
-  border-color: #60a5fa;
+  border-color: #63489c;
   background: rgb(30 58 138 / 35%);
-  color: #dbeafe;
+  color: var(--color-primary-hover);
 }
 
 .upload-line {
@@ -171,7 +172,7 @@ input:focus-visible {
 }
 
 #upload-image:hover {
-  color: #dbeafe;
+  color: var(--color-primary-hover);
 }
 
 #reference-url-form {
@@ -185,8 +186,8 @@ input:focus-visible {
   border: 1px solid rgb(148 163 184 / 55%);
   border-radius: 6px;
   padding: 7px 9px;
-  background: rgb(50 14 59);
-  color: #f8fafc;
+  background: rgb(59 43 93);
+  color: var(--color-text);
   font: inherit;
 }
 
@@ -229,9 +230,7 @@ input:focus-visible {
 }
 
 .quick-controls .toggle-button[aria-pressed="true"] {
-  border-color: #60a5fa;
-  background: rgb(30 58 138 / 65%);
-  color: #dbeafe;
+  border-color: #63489c;
 }
 
 .controls {
@@ -284,8 +283,8 @@ input:focus-visible {
   border: 1px solid rgb(148 163 184 / 28%);
   border-radius: 6px;
   padding: 7px 10px;
-  background: rgb(76 42 133);
-  color: #f8fafc;
+  background: rgb(49 36 78);
+  color: var(--color-text);
   cursor: pointer;
   font: inherit;
   font-weight: 650;
@@ -296,7 +295,8 @@ input:focus-visible {
 }
 
 .button:hover:not(:disabled) {
-  background: rgb(71 85 105 / 78%);
+  background: rgb(255 155 255 / 20%);
+  color: var(--color-primary-hover);
 }
 .live {
   min-height: 1.4em;
