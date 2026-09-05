@@ -6,6 +6,10 @@ import {
   type PopupState,
   type PopupView,
 } from "../../src/popup/popup-controller";
+import {
+  readPanelVisibility,
+  setPanelVisibility,
+} from "../../src/popup/panel-visibility";
 import "./style.css";
 
 function escapeHtml(value: string): string {
@@ -45,17 +49,37 @@ function markup(state: PopupState): string {
   return `<h1>Pixel Pincher</h1>${status}<p>Use the in-page control panel to manage the reference and overlay.</p><button id="toggle-panel" type="button">Hide in-page controls</button>${state.kind === "error" ? '<button id="retry" type="button">Retry</button>' : ""}`;
 }
 
-async function panelIsVisible(): Promise<boolean> {
+async function panelVisibility(): Promise<boolean | undefined> {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tabId = tabs[0]?.id;
+  if (tabId === undefined) return undefined;
+  try {
+    const result = await chrome.scripting.executeScript({
+      target: { frameIds: [0], tabId },
+      func: readPanelVisibility,
+    });
+    return typeof result[0]?.result === "boolean"
+      ? result[0].result
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function setActivePanelVisibility(visible: boolean): Promise<boolean> {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   const tabId = tabs[0]?.id;
   if (tabId === undefined) return false;
-  const result = await chrome.scripting.executeScript({
-    target: { frameIds: [0], tabId },
-    func: () =>
-      document.getElementById("pixel-pincher-control-panel")?.style.display !==
-      "none",
-  });
-  return result[0]?.result === true;
+  try {
+    const result = await chrome.scripting.executeScript({
+      target: { frameIds: [0], tabId },
+      func: setPanelVisibility,
+      args: [visible],
+    });
+    return result[0]?.result === true;
+  } catch {
+    return false;
+  }
 }
 
 function attach(root: HTMLElement, controller: PopupController): void {
@@ -70,31 +94,23 @@ function attach(root: HTMLElement, controller: PopupController): void {
   });
   const togglePanel = root.querySelector<HTMLButtonElement>("#toggle-panel");
   if (togglePanel === null) return;
-  void panelIsVisible().then((visible) => {
-    togglePanel.textContent = visible
+  void panelVisibility().then((visible) => {
+    togglePanel.textContent = visible === true
       ? "Hide in-page controls"
       : "Show in-page controls";
   });
   togglePanel.addEventListener("click", async () => {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    const tabId = tabs[0]?.id;
-    if (tabId === undefined) return;
-    const result = await chrome.scripting.executeScript({
-      target: { frameIds: [0], tabId },
-      func: () => {
-        const panel = document.getElementById("pixel-pincher-control-panel");
-        if (panel === null) return false;
-        const visible = panel.style.display === "none";
-        panel.style.display = visible ? "block" : "none";
-        panel.setAttribute("aria-hidden", String(!visible));
-        return visible;
-      },
-    });
-    const visible = result[0]?.result;
-    if (typeof visible === "boolean")
-      togglePanel.textContent = visible
-        ? "Hide in-page controls"
-        : "Show in-page controls";
+    const current = await panelVisibility();
+    // A navigation can create the popup before the runtime content script has
+    // rebuilt its panel. Refresh through the existing permission-gated
+    // background path, then show the newly injected panel.
+    const visible = current === undefined
+      ? (await controller.refresh(), await setActivePanelVisibility(true))
+      : await setActivePanelVisibility(!current);
+    if (visible)
+      togglePanel.textContent = current === true
+        ? "Show in-page controls"
+        : "Hide in-page controls";
   });
 }
 

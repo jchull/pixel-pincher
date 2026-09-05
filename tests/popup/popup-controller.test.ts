@@ -145,6 +145,18 @@ describe("popup controller", () => {
     ]);
   });
 
+  it("refreshes enabled state after a document navigation so the panel can be reinjected", async () => {
+    const harness = createHarness({ enabled: true });
+    await harness.controller.start();
+    await harness.controller.refresh();
+
+    expect(harness.controller.state.kind).toBe("enabled");
+    expect(harness.adapter.requests.map((request) => request.kind)).toEqual([
+      "get-tab-state",
+      "get-tab-state",
+    ]);
+  });
+
   it("rejects stale response IDs without dispatching a popup mutation", async () => {
     const harness = createHarness();
     harness.adapter.send = async (request) => {

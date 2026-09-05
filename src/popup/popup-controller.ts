@@ -83,6 +83,11 @@ export class PopupController {
     await this.#load();
   }
 
+  /** Rechecks the active enabled tab so its runtime panel is injected after navigation. */
+  async refresh(): Promise<void> {
+    await this.#load();
+  }
+
   /** Must be called by the click handler: requesting permission is the first await. */
   async enable(focusId = "enable-site"): Promise<void> {
     const recovery = this.#recover();
