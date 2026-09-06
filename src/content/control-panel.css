@@ -1,5 +1,16 @@
 :host {
-
+    --color-text: #dfdaeb;
+    --color-border: rgb(148 163 184 / 34%);
+    --color-focus: #60a5fa;
+    --color-primary: rgb(49 36 78);
+    --color-primary-hover: rgb(221 251 210);
+    --color-primary-active: rgb(30 41 59 / 95%);
+    --color-danger: #fca5a5;
+    --color-danger-background: rgb(127 29 29 / 34%);
+    --radius: 6px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
   all: initial;
   position: fixed;
   z-index: 2147483647;
@@ -26,6 +37,7 @@
 
 .panel {
   overflow: hidden;
+  color: var(--color-text);
   border: 1px solid rgb(148 163 184 / 34%);
   border-radius: 12px;
   background: linear-gradient(145deg, rgb(49 36 78), rgb(69 50 109));
@@ -89,12 +101,10 @@
 }
 
 .close:hover,
-.collapse:hover {
+.collapse:hover,
+button:hover,
+.button:hover:not(:disabled) {
   background: rgb(255 155 255 / 20%);
-  color: var(--color-primary-hover);
-}
-
-.close:hover {
   color: var(--color-primary-hover);
 }
 
@@ -294,10 +304,6 @@ input:focus-visible {
   cursor: default;
 }
 
-.button:hover:not(:disabled) {
-  background: rgb(255 155 255 / 20%);
-  color: var(--color-primary-hover);
-}
 .live {
   min-height: 1.4em;
   margin: 0;
