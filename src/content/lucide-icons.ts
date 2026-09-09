@@ -1,4 +1,10 @@
-type IconName = "eye" | "eye-off" | "lock" | "lock-keyhole-open";
+type IconName =
+  | "eye"
+  | "eye-off"
+  | "lock"
+  | "lock-keyhole-open"
+  | "maximize"
+  | "contrast";
 type IconNode = readonly [
   name: "circle" | "path" | "rect",
   attributes: Readonly<Record<string, string>>,
@@ -38,6 +44,16 @@ const ICON_NODES: Readonly<Record<IconName, readonly IconNode[]>> = {
     ["circle", { cx: "12", cy: "16", r: "1" }],
     ["rect", { width: "18", height: "12", x: "3", y: "10", rx: "2" }],
     ["path", { d: "M7 10V7a5 5 0 0 1 9.33-2.5" }],
+  ],
+  maximize: [
+    ["path", { d: "M8 3H5a2 2 0 0 0-2 2v3" }],
+    ["path", { d: "M16 3h3a2 2 0 0 1 2 2v3" }],
+    ["path", { d: "M21 16v3a2 2 0 0 1-2 2h-3" }],
+    ["path", { d: "M3 16v3a2 2 0 0 0 2 2h3" }],
+  ],
+  contrast: [
+    ["circle", { cx: "12", cy: "12", r: "10" }],
+    ["path", { d: "M12 2a10 10 0 0 0 0 20Z" }],
   ],
 };
 

@@ -78,10 +78,10 @@ type PanelElements = Readonly<{
   hide: HTMLButtonElement;
   opacity: HTMLInputElement;
   opacityNumber: HTMLInputElement;
-  fitWidth: HTMLInputElement;
+  fitWidth: HTMLButtonElement;
   scale: HTMLInputElement;
   scaleNumber: HTMLInputElement;
-  inverted: HTMLInputElement;
+  inverted: HTMLButtonElement;
   lock: HTMLButtonElement;
   x: HTMLInputElement;
   y: HTMLInputElement;
@@ -141,11 +141,11 @@ export class ControlPanel {
     e.opacity.addEventListener("input", this.#handleOpacity);
     e.opacityNumber.addEventListener("input", this.#handleOpacityNumber);
     e.opacityNumber.addEventListener("keydown", this.#handleNumberKey);
-    e.fitWidth.addEventListener("change", this.#handleFitWidth);
+    e.fitWidth.addEventListener("click", this.#handleFitWidth);
     e.scale.addEventListener("input", this.#handleScale);
     e.scaleNumber.addEventListener("input", this.#handleScaleNumber);
     e.scaleNumber.addEventListener("keydown", this.#handleNumberKey);
-    e.inverted.addEventListener("change", this.#handleInversion);
+    e.inverted.addEventListener("click", this.#handleInversion);
     e.lock.addEventListener("click", this.#handleInteraction);
     e.x.addEventListener("input", this.#handlePlacement);
     e.y.addEventListener("input", this.#handlePlacement);
@@ -236,13 +236,13 @@ export class ControlPanel {
     setHideToggleState(e.hide, !settings.visible);
     e.opacity.value = String(Math.round(settings.opacity * 100));
     e.opacityNumber.value = e.opacity.value;
-    e.fitWidth.checked = settings.sizing.kind === "fit-width";
+    setFitWidthToggleState(e.fitWidth, settings.sizing.kind === "fit-width");
     const scale = manualScale(settings.sizing);
     e.scale.value = String(scale);
     e.scaleNumber.value = String(scale);
     e.scale.disabled = disabled || settings.sizing.kind === "fit-width";
     e.scaleNumber.disabled = disabled || settings.sizing.kind === "fit-width";
-    e.inverted.checked = settings.inverted;
+    setInversionToggleState(e.inverted, settings.inverted);
     setLockToggleState(e.lock, settings.interactionMode === "click-through");
     e.x.value = String(settings.placement.x);
     e.y.value = String(settings.placement.y);
@@ -338,7 +338,8 @@ export class ControlPanel {
         credentials: "omit",
         referrerPolicy: "no-referrer",
       });
-      if (!response.ok) throw new Error(`Image request failed: ${response.status}`);
+      if (!response.ok)
+        throw new Error(`Image request failed: ${response.status}`);
       const bounded = await readBoundedResponse(response, MAX_IMAGE_RAW_BYTES);
       if (!bounded.ok) {
         if (bounded.reason === "too-large") {
@@ -427,7 +428,7 @@ export class ControlPanel {
     this.#queueSetting(
       {
         kind: "sizing",
-        sizing: this.#elements.fitWidth.checked
+        sizing: !isTogglePressed(this.#elements.fitWidth)
           ? { kind: "fit-width", lastScalePercent: current }
           : { kind: "scale", percent: current },
       },
@@ -456,11 +457,11 @@ export class ControlPanel {
       true,
     );
   };
-  #handleInversion = (): void =>
-    this.#queueSetting({
-      kind: "inversion",
-      inverted: this.#elements.inverted.checked,
-    });
+  #handleInversion = (): void => {
+    const inverted = !isTogglePressed(this.#elements.inverted);
+    setInversionToggleState(this.#elements.inverted, inverted);
+    this.#queueSetting({ kind: "inversion", inverted });
+  };
   #handleInteraction = (): void => {
     const locked = !isTogglePressed(this.#elements.lock);
     setLockToggleState(this.#elements.lock, locked);
@@ -584,13 +585,18 @@ export class ControlPanel {
   }
 
   #currentPlacement(): Placement {
-    const placement = this.#placementIntent ?? this.#snapshot?.settings.placement;
+    const placement =
+      this.#placementIntent ?? this.#snapshot?.settings.placement;
     if (placement === undefined)
-      throw new Error("Cannot update placement before the panel has a snapshot.");
+      throw new Error(
+        "Cannot update placement before the panel has a snapshot.",
+      );
     return placement;
   }
 
-  #clearPlacementIntentIfConfirmed(snapshot: OverlaySnapshot | undefined): void {
+  #clearPlacementIntentIfConfirmed(
+    snapshot: OverlaySnapshot | undefined,
+  ): void {
     const intent = this.#placementIntent;
     if (
       snapshot !== undefined &&
@@ -842,7 +848,7 @@ function findOrCreatePanel(
   const hide = toggleButton(document, "overlay-hide", "Hide");
   const opacity = range(document, "opacity", 0, 100);
   const opacityNumber = number(document, "opacity-number", 0, 100);
-  const fitWidth = checkbox(document, "fit-width", "Fit to viewport width");
+  const fitWidth = toggleButton(document, "fit-width", "Fit to viewport width");
   const scale = range(document, "scale", MIN_SCALE_PERCENT, MAX_SCALE_PERCENT);
   const scaleNumber = number(
     document,
@@ -850,17 +856,17 @@ function findOrCreatePanel(
     MIN_SCALE_PERCENT,
     MAX_SCALE_PERCENT,
   );
-  const inverted = checkbox(document, "inverted", "Invert colors");
+  const inverted = toggleButton(document, "inverted", "Invert colors");
   const lock = toggleButton(document, "overlay-lock", "Lock");
   const x = number(document, "x", MIN_PLACEMENT, MAX_PLACEMENT);
   const y = number(document, "y", MIN_PLACEMENT, MAX_PLACEMENT);
   const quickControls = document.createElement("div");
   quickControls.className = "quick-controls";
-  quickControls.append(hide, lock);
+  quickControls.append(hide, lock, fitWidth, inverted);
   appendRangeControl(controls, "Opacity", opacity, opacityNumber);
   appendRangeControl(controls, "Scale", scale, scaleNumber);
   appendPositionControls(controls, x, y);
-  controls.append(fitWidth.parentElement!, inverted.parentElement!);
+
   const clear = button(document, "clear-site", "Clear site data");
   const confirm = document.createElement("p");
   confirm.textContent =
@@ -932,19 +938,6 @@ function toggleButton(
   return toggle;
 }
 
-function checkbox(
-  document: Document,
-  id: string,
-  label: string,
-): HTMLInputElement {
-  const input = document.createElement("input");
-  input.id = id;
-  input.type = "checkbox";
-  const wrapper = document.createElement("label");
-  wrapper.textContent = label;
-  wrapper.prepend(input);
-  return input;
-}
 function range(
   document: Document,
   id: string,
@@ -1006,9 +999,19 @@ function setLockToggleState(toggle: HTMLButtonElement, locked: boolean): void {
   );
 }
 
+function setFitWidthToggleState(toggle: HTMLButtonElement, enabled: boolean): void {
+  setToggleState(toggle, enabled);
+  setToggleLabel(toggle, "maximize", "Fit to viewport width");
+}
+
+function setInversionToggleState(toggle: HTMLButtonElement, inverted: boolean): void {
+  setToggleState(toggle, inverted);
+  setToggleLabel(toggle, "contrast", "Invert colors");
+}
+
 function setToggleLabel(
   toggle: HTMLButtonElement,
-  icon: "eye" | "eye-off" | "lock" | "lock-keyhole-open",
+  icon: "eye" | "eye-off" | "lock" | "lock-keyhole-open" | "maximize" | "contrast",
   label: string,
 ): void {
   const accessibleLabel = `${label} overlay`;
