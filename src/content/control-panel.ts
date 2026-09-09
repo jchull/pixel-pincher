@@ -83,6 +83,7 @@ type PanelElements = Readonly<{
   scaleNumber: HTMLInputElement;
   inverted: HTMLButtonElement;
   lock: HTMLButtonElement;
+  position: HTMLButtonElement;
   x: HTMLInputElement;
   y: HTMLInputElement;
   clear: HTMLButtonElement;
@@ -147,6 +148,7 @@ export class ControlPanel {
     e.scaleNumber.addEventListener("keydown", this.#handleNumberKey);
     e.inverted.addEventListener("click", this.#handleInversion);
     e.lock.addEventListener("click", this.#handleInteraction);
+    e.position.addEventListener("click", this.#togglePositionControls);
     e.x.addEventListener("input", this.#handlePlacement);
     e.y.addEventListener("input", this.#handlePlacement);
     e.x.addEventListener("blur", this.#handlePlacement);
@@ -469,6 +471,13 @@ export class ControlPanel {
       kind: "interaction-mode",
       interactionMode: locked ? "click-through" : "drag",
     });
+  };
+  #togglePositionControls = (): void => {
+    const popover = this.#host.querySelector<HTMLElement>(".position-popover");
+    if (popover === null) return;
+    popover.hidden = !popover.hidden;
+    this.#elements.position.setAttribute("aria-expanded", String(!popover.hidden));
+    if (!popover.hidden) this.#elements.x.focus();
   };
   #handlePlacement = (event: Event): void => {
     const input = event.currentTarget;
@@ -858,16 +867,26 @@ function findOrCreatePanel(
   );
   const inverted = toggleButton(document, "inverted", "Invert colors");
   const lock = toggleButton(document, "overlay-lock", "Lock");
+  const position = toggleButton(document, "overlay-position", "Position");
+  position.replaceChildren(lucideIcon(document, "move"));
+  position.title = "Position overlay";
+  position.setAttribute("aria-label", "Position overlay");
+  position.setAttribute("aria-expanded", "false");
   const x = number(document, "x", MIN_PLACEMENT, MAX_PLACEMENT);
   const y = number(document, "y", MIN_PLACEMENT, MAX_PLACEMENT);
   const quickControls = document.createElement("div");
   quickControls.className = "quick-controls";
-  quickControls.append(hide, lock, fitWidth, inverted);
+  quickControls.append(hide, lock, fitWidth, inverted, position);
   appendRangeControl(controls, "Opacity", opacity, opacityNumber);
   appendRangeControl(controls, "Scale", scale, scaleNumber);
-  appendPositionControls(controls, x, y);
-
-  const clear = button(document, "clear-site", "Clear site data");
+  const positionPopover = document.createElement("div");
+  positionPopover.className = "position-popover";
+  positionPopover.hidden = true;
+  appendPositionControls(positionPopover, x, y);
+  const clear = toggleButton(document, "clear-site", "Clear site data");
+  clear.replaceChildren(lucideIcon(document, "trash-2"));
+  clear.title = "Clear site data";
+  clear.setAttribute("aria-label", "Clear site data");
   const confirm = document.createElement("p");
   confirm.textContent =
     "Click clear again to confirm removing this site’s image and settings.";
@@ -887,7 +906,10 @@ function findOrCreatePanel(
     confirm,
     live,
   );
-  content.append(quickControls, expanded);
+  const divider = document.createElement("span");
+  divider.className = "quick-divider";
+  quickControls.append(divider, clear);
+  content.append(quickControls, positionPopover, expanded);
   panel.append(header, content);
   root.append(style, panel);
   return {
@@ -908,6 +930,7 @@ function findOrCreatePanel(
     scaleNumber,
     inverted,
     lock,
+    position,
     x,
     y,
     clear,
@@ -999,19 +1022,31 @@ function setLockToggleState(toggle: HTMLButtonElement, locked: boolean): void {
   );
 }
 
-function setFitWidthToggleState(toggle: HTMLButtonElement, enabled: boolean): void {
+function setFitWidthToggleState(
+  toggle: HTMLButtonElement,
+  enabled: boolean,
+): void {
   setToggleState(toggle, enabled);
   setToggleLabel(toggle, "maximize", "Fit to viewport width");
 }
 
-function setInversionToggleState(toggle: HTMLButtonElement, inverted: boolean): void {
+function setInversionToggleState(
+  toggle: HTMLButtonElement,
+  inverted: boolean,
+): void {
   setToggleState(toggle, inverted);
   setToggleLabel(toggle, "contrast", "Invert colors");
 }
 
 function setToggleLabel(
   toggle: HTMLButtonElement,
-  icon: "eye" | "eye-off" | "lock" | "lock-keyhole-open" | "maximize" | "contrast",
+  icon:
+    | "eye"
+    | "eye-off"
+    | "lock"
+    | "lock-keyhole-open"
+    | "maximize"
+    | "contrast",
   label: string,
 ): void {
   const accessibleLabel = `${label} overlay`;
