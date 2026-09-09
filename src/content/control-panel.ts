@@ -528,8 +528,8 @@ export class ControlPanel {
   #toggleClear = (): void => {
     if (!this.#confirmingClear) {
       this.#confirmingClear = true;
-      this.#elements.confirm.hidden = false;
-      setClearButtonState(this.#elements.clear, true);
+      this.#collapsed = false;
+      this.#render();
       return;
     }
     this.#confirmingClear = false;
@@ -832,7 +832,7 @@ function findOrCreatePanel(
   referenceUrl.id = "reference-url";
   referenceUrl.type = "url";
   referenceUrl.inputMode = "url";
-  referenceUrl.placeholder = "Paste image URL or data URI";
+  referenceUrl.placeholder = "image URL or data URI";
   referenceUrl.setAttribute("autocomplete", "url");
   referenceUrl.setAttribute("aria-label", "Image URL");
   const importUrl = button(document, "import-url", "Import URL");
@@ -999,7 +999,10 @@ function setLockToggleState(toggle: HTMLButtonElement, locked: boolean): void {
   );
 }
 
-function setClearButtonState(toggle: HTMLButtonElement, confirming: boolean): void {
+function setClearButtonState(
+  toggle: HTMLButtonElement,
+  confirming: boolean,
+): void {
   const label = confirming ? "Confirm clear site data" : "Clear site data";
   toggle.replaceChildren(lucideIcon(toggle.ownerDocument, "trash-2"));
   toggle.setAttribute("aria-label", label);
