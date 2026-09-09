@@ -15,7 +15,7 @@
   position: fixed;
   z-index: 2147483647;
   display: block;
-  width: 300px;
+  width: 256px;
   margin: 0;
   padding: 0;
   color: var(--color-text);
