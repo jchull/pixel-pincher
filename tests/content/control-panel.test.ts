@@ -165,7 +165,9 @@ describe("ControlPanel", () => {
     if (!(hideToggle instanceof HTMLButtonElement))
       throw new Error("Expected overlay hide toggle.");
     expect(hideToggle.getAttribute("aria-pressed")).toBe("false");
-    expect(hideToggle.textContent).toBe("Hide");
+    expect(hideToggle.getAttribute("aria-label")).toBe("Hide overlay");
+    expect(hideToggle.title).toBe("Hide overlay");
+    expect(hideToggle.textContent).toBe("");
     expect(hideToggle.querySelector("svg")).not.toBeNull();
     const lockToggle = elements.find(
       (element) => element.id === "overlay-lock",
@@ -173,7 +175,9 @@ describe("ControlPanel", () => {
     if (!(lockToggle instanceof HTMLButtonElement))
       throw new Error("Expected overlay lock toggle.");
     expect(lockToggle.getAttribute("aria-pressed")).toBe("true");
-    expect(lockToggle.textContent).toBe("Unlock");
+    expect(lockToggle.getAttribute("aria-label")).toBe("Unlock overlay");
+    expect(lockToggle.title).toBe("Unlock overlay");
+    expect(lockToggle.textContent).toBe("");
     expect(lockToggle.querySelector("svg")).not.toBeNull();
     expect(
       elements.some((element) => element.classList.contains("position-inputs")),
@@ -677,6 +681,7 @@ describe("ControlPanel", () => {
     if (!(hideOverlay instanceof HTMLButtonElement))
       throw new Error("Expected overlay hide toggle.");
     expect(hideOverlay.getAttribute("aria-pressed")).toBe("true");
-    expect(hideOverlay.textContent).toBe("Show");
+    expect(hideOverlay.getAttribute("aria-label")).toBe("Show overlay");
+    expect(hideOverlay.querySelector("svg")).not.toBeNull();
   });
 });

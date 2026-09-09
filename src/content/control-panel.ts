@@ -1011,8 +1011,10 @@ function setToggleLabel(
   icon: "eye" | "eye-off" | "lock" | "lock-keyhole-open",
   label: string,
 ): void {
-  toggle.replaceChildren(lucideIcon(toggle.ownerDocument, icon), label);
-  toggle.setAttribute("aria-label", `${label} overlay`);
+  const accessibleLabel = `${label} overlay`;
+  toggle.replaceChildren(lucideIcon(toggle.ownerDocument, icon));
+  toggle.setAttribute("aria-label", accessibleLabel);
+  toggle.title = accessibleLabel;
 }
 
 function appendPositionControls(

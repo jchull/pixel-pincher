@@ -220,27 +220,27 @@ input:focus-visible {
 }
 
 .quick-controls {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
   gap: 8px;
 }
 
 .quick-controls .toggle-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
   margin: 0;
+  padding: 0;
 }
 
 .quick-controls .toggle-button svg {
-  width: 16px;
-  height: 16px;
-  flex: none;
+  width: 18px;
+  height: 18px;
 }
 
 .quick-controls .toggle-button[aria-pressed="true"] {
   border-color: #63489c;
+  background: #63489c;
 }
 
 .controls {
