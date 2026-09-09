@@ -83,7 +83,6 @@ type PanelElements = Readonly<{
   scaleNumber: HTMLInputElement;
   inverted: HTMLButtonElement;
   lock: HTMLButtonElement;
-  position: HTMLButtonElement;
   x: HTMLInputElement;
   y: HTMLInputElement;
   clear: HTMLButtonElement;
@@ -148,7 +147,6 @@ export class ControlPanel {
     e.scaleNumber.addEventListener("keydown", this.#handleNumberKey);
     e.inverted.addEventListener("click", this.#handleInversion);
     e.lock.addEventListener("click", this.#handleInteraction);
-    e.position.addEventListener("click", this.#togglePositionControls);
     e.x.addEventListener("input", this.#handlePlacement);
     e.y.addEventListener("input", this.#handlePlacement);
     e.x.addEventListener("blur", this.#handlePlacement);
@@ -261,9 +259,7 @@ export class ControlPanel {
       control.disabled = disabled;
     e.clear.disabled = disabled;
     e.confirm.hidden = !this.#confirmingClear;
-    e.clear.textContent = this.#confirmingClear
-      ? "Confirm clear site data"
-      : "Clear site data";
+    setClearButtonState(e.clear, this.#confirmingClear);
   }
 
   #closePanel = (): void => {
@@ -472,13 +468,6 @@ export class ControlPanel {
       interactionMode: locked ? "click-through" : "drag",
     });
   };
-  #togglePositionControls = (): void => {
-    const popover = this.#host.querySelector<HTMLElement>(".position-popover");
-    if (popover === null) return;
-    popover.hidden = !popover.hidden;
-    this.#elements.position.setAttribute("aria-expanded", String(!popover.hidden));
-    if (!popover.hidden) this.#elements.x.focus();
-  };
   #handlePlacement = (event: Event): void => {
     const input = event.currentTarget;
     if (input instanceof HTMLInputElement) this.#commitNumber(input);
@@ -540,12 +529,12 @@ export class ControlPanel {
     if (!this.#confirmingClear) {
       this.#confirmingClear = true;
       this.#elements.confirm.hidden = false;
-      this.#elements.clear.textContent = "Confirm clear site data";
+      setClearButtonState(this.#elements.clear, true);
       return;
     }
     this.#confirmingClear = false;
     this.#elements.confirm.hidden = true;
-    this.#elements.clear.textContent = "Clear site data";
+    setClearButtonState(this.#elements.clear, false);
     void this.#send({ kind: "clear-site" });
   };
 
@@ -867,26 +856,16 @@ function findOrCreatePanel(
   );
   const inverted = toggleButton(document, "inverted", "Invert colors");
   const lock = toggleButton(document, "overlay-lock", "Lock");
-  const position = toggleButton(document, "overlay-position", "Position");
-  position.replaceChildren(lucideIcon(document, "move"));
-  position.title = "Position overlay";
-  position.setAttribute("aria-label", "Position overlay");
-  position.setAttribute("aria-expanded", "false");
   const x = number(document, "x", MIN_PLACEMENT, MAX_PLACEMENT);
   const y = number(document, "y", MIN_PLACEMENT, MAX_PLACEMENT);
   const quickControls = document.createElement("div");
   quickControls.className = "quick-controls";
-  quickControls.append(hide, lock, fitWidth, inverted, position);
+  quickControls.append(hide, lock, fitWidth, inverted);
   appendRangeControl(controls, "Opacity", opacity, opacityNumber);
   appendRangeControl(controls, "Scale", scale, scaleNumber);
-  const positionPopover = document.createElement("div");
-  positionPopover.className = "position-popover";
-  positionPopover.hidden = true;
-  appendPositionControls(positionPopover, x, y);
+  appendPositionControls(controls, x, y);
   const clear = toggleButton(document, "clear-site", "Clear site data");
-  clear.replaceChildren(lucideIcon(document, "trash-2"));
-  clear.title = "Clear site data";
-  clear.setAttribute("aria-label", "Clear site data");
+  setClearButtonState(clear, false);
   const confirm = document.createElement("p");
   confirm.textContent =
     "Click clear again to confirm removing this site’s image and settings.";
@@ -902,14 +881,13 @@ function findOrCreatePanel(
     fileDropTarget,
     referenceUrlForm,
     controls,
-    clear,
     confirm,
     live,
   );
   const divider = document.createElement("span");
   divider.className = "quick-divider";
   quickControls.append(divider, clear);
-  content.append(quickControls, positionPopover, expanded);
+  content.append(quickControls, expanded);
   panel.append(header, content);
   root.append(style, panel);
   return {
@@ -930,7 +908,6 @@ function findOrCreatePanel(
     scaleNumber,
     inverted,
     lock,
-    position,
     x,
     y,
     clear,
@@ -1020,6 +997,14 @@ function setLockToggleState(toggle: HTMLButtonElement, locked: boolean): void {
     locked ? "lock-keyhole-open" : "lock",
     locked ? "Unlock" : "Lock",
   );
+}
+
+function setClearButtonState(toggle: HTMLButtonElement, confirming: boolean): void {
+  const label = confirming ? "Confirm clear site data" : "Clear site data";
+  toggle.replaceChildren(lucideIcon(toggle.ownerDocument, "trash-2"));
+  toggle.setAttribute("aria-label", label);
+  toggle.title = label;
+  setToggleState(toggle, confirming);
 }
 
 function setFitWidthToggleState(

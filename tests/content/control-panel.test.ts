@@ -86,7 +86,8 @@ function deferred<T>(): Readonly<{
   return {
     promise,
     resolve(value: T): void {
-      if (complete === undefined) throw new Error("Deferred promise is not ready.");
+      if (complete === undefined)
+        throw new Error("Deferred promise is not ready.");
       complete(value);
     },
   };
@@ -367,7 +368,7 @@ describe("ControlPanel", () => {
     );
     const clear = byId<HTMLButtonElement>("clear-site");
     clear.click();
-    expect(clear.textContent).toContain("Confirm");
+    expect(clear.getAttribute("aria-label")).toBe("Confirm clear site data");
     clear.click();
     await vi.waitFor(() =>
       expect(send).toHaveBeenCalledWith(
@@ -411,9 +412,15 @@ describe("ControlPanel", () => {
   });
 
   it("redacts URL credentials and path details from import diagnostics", async () => {
-    const fetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("failed"));
-    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const referenceUrl = elements.find((element) => element.id === "reference-url");
+    const fetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("failed"));
+    const error = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const referenceUrl = elements.find(
+      (element) => element.id === "reference-url",
+    );
     const importUrl = buttons.find((button) => button.id === "import-url");
     if (!(referenceUrl instanceof HTMLInputElement) || importUrl === undefined)
       throw new Error("Expected URL import controls.");
@@ -445,8 +452,11 @@ describe("ControlPanel", () => {
     panel = new ControlPanel({ window, document, request: send });
     panel.apply(snapshot(1));
     const input = (id: string): HTMLInputElement => {
-      const found = [...elements].reverse().find((element) => element.id === id);
-      if (!(found instanceof HTMLInputElement)) throw new Error(`Expected ${id}.`);
+      const found = [...elements]
+        .reverse()
+        .find((element) => element.id === id);
+      if (!(found instanceof HTMLInputElement))
+        throw new Error(`Expected ${id}.`);
       return found;
     };
     const x = input("x");
@@ -502,8 +512,11 @@ describe("ControlPanel", () => {
     panel = new ControlPanel({ window, document, request: send });
     panel.apply(snapshot(1));
     const input = (id: string): HTMLInputElement => {
-      const found = [...elements].reverse().find((element) => element.id === id);
-      if (!(found instanceof HTMLInputElement)) throw new Error(`Expected ${id}.`);
+      const found = [...elements]
+        .reverse()
+        .find((element) => element.id === id);
+      if (!(found instanceof HTMLInputElement))
+        throw new Error(`Expected ${id}.`);
       return found;
     };
     const x = input("x");
@@ -515,7 +528,8 @@ describe("ControlPanel", () => {
     y.value = "30";
     y.dispatchEvent(new Event("input"));
     const firstRequest = requests[0];
-    if (firstRequest === undefined) throw new Error("Expected a settings mutation.");
+    if (firstRequest === undefined)
+      throw new Error("Expected a settings mutation.");
     first.resolve({
       requestId: firstRequest.requestId,
       ok: false,
@@ -549,7 +563,10 @@ describe("ControlPanel", () => {
       ok: false as const,
       error: publicError("storage-failed"),
     }));
-    const importer = vi.fn(async () => ({ ok: true as const, value: imported }));
+    const importer = vi.fn(async () => ({
+      ok: true as const,
+      value: imported,
+    }));
     panel.destroy();
     panel = new ControlPanel({
       window,
@@ -570,7 +587,10 @@ describe("ControlPanel", () => {
     const dropTarget = [...elements]
       .reverse()
       .find((element) => element.id === "reference-drop-target");
-    if (!(file instanceof HTMLInputElement) || !(dropTarget instanceof HTMLElement))
+    if (
+      !(file instanceof HTMLInputElement) ||
+      !(dropTarget instanceof HTMLElement)
+    )
       throw new Error("Expected import controls.");
     Object.defineProperty(file, "files", {
       configurable: true,
@@ -602,8 +622,11 @@ describe("ControlPanel", () => {
     const host = document.querySelector<HTMLElement>(
       "#pixel-pincher-control-panel",
     );
-    const close = [...buttons].reverse().find((button) => button.id === "close-panel");
-    if (host === null || close === undefined) throw new Error("Expected panel.");
+    const close = [...buttons]
+      .reverse()
+      .find((button) => button.id === "close-panel");
+    if (host === null || close === undefined)
+      throw new Error("Expected panel.");
 
     close.click();
     await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
@@ -635,13 +658,13 @@ describe("ControlPanel", () => {
     const host = document.querySelector<HTMLElement>(
       "#pixel-pincher-control-panel",
     );
-    const x = [...elements]
-      .reverse()
-      .find((element) => element.id === "x");
-    const y = [...elements]
-      .reverse()
-      .find((element) => element.id === "y");
-    if (host === null || !(x instanceof HTMLInputElement) || !(y instanceof HTMLInputElement))
+    const x = [...elements].reverse().find((element) => element.id === "x");
+    const y = [...elements].reverse().find((element) => element.id === "y");
+    if (
+      host === null ||
+      !(x instanceof HTMLInputElement) ||
+      !(y instanceof HTMLInputElement)
+    )
       throw new Error("Expected panel controls.");
     x.value = "12";
     x.dispatchEvent(new Event("input"));
@@ -662,7 +685,11 @@ describe("ControlPanel", () => {
 
     const request = requests[0];
     if (request === undefined) throw new Error("Expected queued mutation.");
-    first.resolve({ requestId: request.requestId, ok: true, value: snapshot(2) });
+    first.resolve({
+      requestId: request.requestId,
+      ok: true,
+      value: snapshot(2),
+    });
     await Promise.resolve();
     await Promise.resolve();
     expect(requests).toHaveLength(1);
