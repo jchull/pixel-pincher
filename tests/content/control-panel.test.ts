@@ -370,7 +370,9 @@ describe("ControlPanel", () => {
     byId<HTMLButtonElement>("collapse-panel").click();
     clear.click();
     expect(
-      elements.find((element) => element.classList.contains("panel"))?.classList.contains("collapsed"),
+      elements
+        .find((element) => element.classList.contains("panel"))
+        ?.classList.contains("collapsed"),
     ).toBe(false);
     expect(clear.getAttribute("aria-label")).toBe("Confirm clear site data");
     clear.click();
